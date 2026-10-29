@@ -1,0 +1,867 @@
+<!doctype html>
+<!--
+  Parafuso Maluco: a single-file screw sorting puzzle.
+  Colored acrylic plates are stacked in layers and pinned by screws. Tap a free
+  screw (not covered by a higher plate) to unscrew it; it flies to the open box
+  of its color or waits in a 5-slot tray. Drop every plate without overflowing.
+  Levels are procedurally generated (seeded) and always winnable.
+-->
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="theme-color" content="#2a1450">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Parafuso">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="manifest" href="../manifest.webmanifest">
+<link rel="icon" href="../icons/icon-192.png">
+<link rel="apple-touch-icon" href="../icons/apple-touch-icon.png">
+<title>Parafuso Maluco</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;800&display=swap" rel="stylesheet">
+<style>
+  :root{--bg1:#4a1f86;--bg2:#1a0b38;--ink:#fff;--accent:#ffd23f;--pink:#ff4d8d}
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+  html,body{height:100%;overflow:hidden;background:radial-gradient(circle at 50% 15%,var(--bg1),var(--bg2) 75%);
+    font-family:"Baloo 2",system-ui,sans-serif;color:var(--ink);touch-action:none;user-select:none;-webkit-user-select:none}
+  #stage{position:absolute;left:0;top:0;width:420px;height:800px;transform-origin:0 0}
+  canvas{position:absolute;left:0;top:0;width:420px;height:800px}
+  #hud{position:absolute;left:0;top:0;width:420px;height:54px;display:flex;align-items:center;gap:8px;padding:8px 12px 0}
+  #info{flex:1;line-height:1;text-shadow:0 2px 0 rgba(0,0,0,.35)}
+  #lvl{font-size:22px;font-weight:800;letter-spacing:.5px}
+  #pts{font-size:15px;font-weight:800;margin-top:3px;white-space:nowrap}
+  #pts b{color:var(--accent)}
+  .btn{border:0;border-radius:14px;font:inherit;font-weight:800;color:#2a1450;background:var(--accent);
+    box-shadow:0 4px 0 #b88a00;cursor:pointer;transition:transform .08s}
+  .btn:active{transform:translateY(3px);box-shadow:0 1px 0 #b88a00}
+  .btn:disabled{opacity:.4}
+  .hb{height:38px;min-width:42px;padding:0 10px;font-size:17px;display:inline-flex;align-items:center;justify-content:center;text-decoration:none}
+  .hb.alt{background:#fff;box-shadow:0 4px 0 #b9a9d6}
+  #overlay{position:absolute;inset:0;display:none;align-items:center;justify-content:center;
+    background:rgba(20,6,45,.62);backdrop-filter:blur(3px)}
+  #overlay.show{display:flex}
+  .card{width:340px;background:#fff;color:#2a1450;border-radius:26px;padding:26px 22px 22px;text-align:center;
+    box-shadow:0 10px 0 rgba(0,0,0,.25);animation:pop .35s cubic-bezier(.2,1.6,.4,1)}
+  @keyframes pop{from{transform:scale(.6);opacity:0}to{transform:scale(1);opacity:1}}
+  .card h1{font-size:44px;line-height:.95;color:var(--pink);margin-bottom:6px}
+  .card h2{font-size:30px;line-height:1.1;margin-bottom:6px}
+  .card p{font-size:17px;line-height:1.3;margin:8px 0;font-weight:600}
+  .card .big{width:100%;height:58px;font-size:24px;margin-top:12px}
+  .card .sec{background:#efe7ff;box-shadow:0 4px 0 #c9b8ef}
+  .card .ded{color:var(--pink);font-size:18px}
+  .rows{margin:12px 0 4px;font-size:16px;font-weight:600}
+  .rows div{display:flex;justify-content:space-between;padding:2px 6px}
+  .rows .z{opacity:.4}
+  .total{font-size:34px;font-weight:800;color:var(--pink);line-height:1.1;margin-top:6px}
+  .rec{font-size:18px;font-weight:800}
+  .rec.new{color:#e0a800;animation:pop .5s .3s both cubic-bezier(.2,1.6,.4,1)}
+  .sum{font-size:15px;opacity:.7}
+  .logo{font-size:46px;line-height:1;margin-bottom:4px}
+  #toast{position:absolute;left:50%;top:256px;transform:translateX(-50%);background:#fff;color:#2a1450;
+    font-weight:800;font-size:18px;padding:6px 16px;border-radius:20px;opacity:0;transition:opacity .25s;pointer-events:none;white-space:nowrap}
+  #toast.show{opacity:1}
+</style>
+</head>
+<body>
+<div id="stage">
+  <canvas id="cv"></canvas>
+  <div id="hud">
+    <a class="btn hb alt" id="bBack" href="../" title="Voltar aos jogos">←</a>
+    <div id="info"><div id="lvl">Nível 1</div><div id="pts"></div></div>
+    <button class="btn hb alt" id="bRestart" title="Recomeçar">↻</button>
+    <button class="btn hb alt" id="bMute" title="Som">🔊</button>
+  </div>
+  <div id="toast"></div>
+  <div id="overlay"><div class="card" id="card"></div></div>
+</div>
+<script>
+// Optional dedication shown on the start screen (leave empty to hide)
+const DEDICATION = 'Feito com ❤ por Rafael para Ranny';
+
+const VW = 420, VH = 800;
+const cv = document.getElementById('cv'), ctx = cv.getContext('2d');
+const stage = document.getElementById('stage');
+const $ = id => document.getElementById(id);
+
+// GEN-START
+// Seeded RNG so a level is identical on every retry
+function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
+const HEAD_R = 14;                       // screw head radius, also the covering test radius
+const AREA = {x0:20, y0:256, x1:400, y1:780};
+const BASE_CAP = 5;                      // tray slots
+const NCOLORS = 8, NTINTS = 8;
+const SPACE_OTHER = 34, SPACE_SAME = 44; // min distance between screws (other plate / same plate)
+
+function levelParams(L){
+  const plates = Math.min(15, 2 + Math.floor(L/2.5));
+  return {
+    plates,
+    colors: Math.min(NCOLORS, 2 + Math.floor((L-1)/4)),
+    mix: L<=3 ? 2 : L<=8 ? 3 : L<=18 ? 4 : 5,   // boxes whose screws get shuffled together
+    trayMax: L<=8 ? 2 : L<=20 ? 3 : 4,          // tray use allowed on the intended path
+    cover: L<=2 ? 1 : L<=6 ? 2 : 3,             // lower screws each new plate tries to cover
+    sz: Math.max(.8, 1.2 - .04*(plates-2)),
+  };
+}
+function pickK(L,rnd){ if(L<=6) return rnd()<.5?2:3; const r=rnd(); return r<.08?1:r<.4?2:r<.75?3:4 }
+function shuffle(a,rnd){for(let i=a.length-1;i>0;i--){const j=Math.floor(rnd()*(i+1));[a[i],a[j]]=[a[j],a[i]]}return a}
+
+function sdBox(x,y,w,h,r){const qx=Math.abs(x)-w/2+r, qy=Math.abs(y)-h/2+r; return Math.hypot(Math.max(qx,0),Math.max(qy,0))+Math.min(Math.max(qx,qy),0)-r}
+// Signed distance from a world point to a plate (negative inside); parts are rounded boxes or circles
+function plateSD(p,x,y){
+  const c=Math.cos(p.a), s=Math.sin(p.a), dx=x-p.cx, dy=y-p.cy;
+  const lx=dx*c+dy*s, ly=-dx*s+dy*c;
+  let d=1e9;
+  for(const q of p.parts) d=Math.min(d, q.R ? Math.hypot(lx-q.x,ly-q.y)-q.R : sdBox(lx-q.x,ly-q.y,q.w,q.h,q.r));
+  return d;
+}
+function toWorld(p,lx,ly){const c=Math.cos(p.a), s=Math.sin(p.a); return [p.cx+lx*c-ly*s, p.cy+lx*s+ly*c]}
+// A screw is free when no remaining higher plate overlaps its head
+function freeAt(plates,goneP,s){
+  for(const q of plates) if(q.id>s.p && !goneP[q.id] && plateSD(q,s.x,s.y)<HEAD_R) return false;
+  return true;
+}
+function blockersOf(plates,goneP,s){return plates.filter(q=>q.id>s.p && !goneP[q.id] && plateSD(q,s.x,s.y)<HEAD_R).map(q=>q.id)}
+
+function spacedOk(set){
+  for(let i=0;i<set.length;i++) for(let j=i+1;j<set.length;j++)
+    if(Math.hypot(set[i][0]-set[j][0],set[i][1]-set[j][1])<SPACE_SAME) return false;
+  return true;
+}
+// Shape in local coords plus screw spot sets for 1..4 screws
+function makeShape(rnd,L,sz){
+  const kinds = L<3 ? ['bar','bar','rect','circle'] : L<5 ? ['bar','bar','rect','circle','L'] : ['bar','bar','bar','rect','circle','L','L'];
+  const kind = kinds[Math.floor(rnd()*kinds.length)], T=50;
+  let parts, sets;
+  if(kind==='bar'){
+    const len=(150+rnd()*150)*sz, e=len/2-T/2;
+    parts=[{x:0,y:0,w:len,h:T,r:T/2}];
+    sets=[null,[[0,0]],[[-e,0],[e,0]],[[-e,0],[0,0],[e,0]],[[-e,0],[-e/3,0],[e/3,0],[e,0]]];
+  }else if(kind==='rect'){
+    const w=(124+rnd()*60)*sz, h=(96+rnd()*36)*sz, ix=w/2-24, iy=h/2-24;
+    parts=[{x:0,y:0,w,h,r:18}];
+    const k=[[-ix,-iy],[ix,iy],[ix,-iy],[-ix,iy]];
+    sets=[null,[[0,0]],k.slice(0,2),k.slice(0,3),k];
+  }else if(kind==='circle'){
+    const R=(52+rnd()*26)*sz, d=R-24;
+    const ring=(n,o)=>Array.from({length:n},(_,i)=>{const t=o+i*2*Math.PI/n; return [Math.cos(t)*d,Math.sin(t)*d]});
+    parts=[{x:0,y:0,R}];
+    sets=[null,[[0,0]],ring(2,0),ring(3,-Math.PI/2),ring(4,Math.PI/4)];
+  }else{
+    const a=(140+rnd()*70)*sz, b=(110+rnd()*60)*sz, ox=a/2, oy=b/2;
+    parts=[{x:a/2-ox,y:T/2-oy,w:a,h:T,r:T/2},{x:T/2-ox,y:b/2-oy,w:T,h:b,r:T/2}];
+    const A=[a-T/2-ox,T/2-oy], B=[T/2-ox,b-T/2-oy], C=[T/2-ox,T/2-oy], M=[a/2-ox+T/4,T/2-oy];
+    sets=[null,[C],[A,B],[A,B,C],[A,B,C,M]];
+  }
+  return {kind, parts, sets:sets.map(s=>s&&spacedOk(s)?s:null)};
+}
+function inArea(p){
+  for(const q of p.parts){
+    const m=q.R||0, pts = q.R ? [[q.x,q.y]] : [[q.x-q.w/2,q.y-q.h/2],[q.x+q.w/2,q.y-q.h/2],[q.x-q.w/2,q.y+q.h/2],[q.x+q.w/2,q.y+q.h/2]];
+    for(const [lx,ly] of pts){ const [x,y]=toWorld(p,lx,ly); if(x-m<AREA.x0||x+m>AREA.x1||y-m<AREA.y0||y+m>AREA.y1) return false }
+  }
+  return true;
+}
+const spotsOf=(p,k)=>p.sets[k].map(([lx,ly])=>toWorld(p,lx,ly));
+function candidate(rnd,L,P){
+  const sh=makeShape(rnd,L,P.sz);
+  let k=pickK(L,rnd); while(k>1 && !sh.sets[k]) k--;
+  const p={kind:sh.kind, parts:sh.parts, sets:sh.sets, k, a:Math.floor(rnd()*12)*Math.PI/12,
+    cx:AREA.x0+rnd()*(AREA.x1-AREA.x0), cy:AREA.y0+rnd()*(AREA.y1-AREA.y0)};
+  return inArea(p) ? p : null;
+}
+// Change screw counts until the total is a multiple of 3
+function fixTotal(plates,L,rnd){
+  const kMin = L<=6 ? 2 : 1;
+  for(let guard=0; guard<40; guard++){
+    const tot=plates.reduce((a,p)=>a+p.k,0), r=tot%3;
+    if(!r) return true;
+    let done=false;
+    for(const p of shuffle(plates.slice(),rnd)){
+      for(const dk of r===2?[1,-1]:[-1,1]){
+        const nk=p.k+dk;
+        if(nk<kMin||nk>4||!p.sets[nk]) continue;
+        const others=[]; plates.forEach(o=>{ if(o!==p) spotsOf(o,o.k).forEach(s=>others.push(s)) });
+        if(spotsOf(p,nk).some(([x,y])=>others.some(([a,b])=>Math.hypot(a-x,b-y)<SPACE_OTHER))) continue;
+        p.k=nk; done=true; break;
+      }
+      if(done) break;
+    }
+    if(!done) return false;
+  }
+  return false;
+}
+
+// ---- Game logic (shared by the game and the tests) ----
+function newGame(g){
+  const left=g.plates.map(()=>0); g.screws.forEach(s=>left[s.p]++);
+  const mk=i=>i<g.queue.length?{uid:i,c:g.queue[i],n:0}:null;
+  return {goneS:g.screws.map(()=>0), goneP:g.plates.map(()=>0), left, boxes:[mk(0),mk(1)], qi:2,
+    tray:Array(BASE_CAP).fill(-1), done:0, won:false, stuck:false};
+}
+const isFree=(g,st,id)=>!st.goneS[id] && freeAt(g.plates,st.goneP,g.screws[id]);
+function boxFor(st,c){
+  let b=-1;
+  st.boxes.forEach((x,i)=>{ if(x&&x.c===c&&x.n<3&&(b<0||x.n>st.boxes[b].n)) b=i });
+  return b;
+}
+function putInBox(g,st,b,id,ev,from){
+  const box=st.boxes[b];
+  ev.push({t:'box',s:id,slot:b,uid:box.uid,idx:box.n,from}); box.n++;
+  if(box.n<3) return;
+  ev.push({t:'done',slot:b,uid:box.uid});
+  const nb = st.qi<g.queue.length ? {uid:st.qi,c:g.queue[st.qi],n:0} : null;
+  st.qi++; st.boxes[b]=nb;
+  if(!nb) return;
+  ev.push({t:'new',slot:b,uid:nb.uid,c:nb.c});
+  // Waiting tray screws of the new color jump in
+  for(let i=0;i<st.tray.length && nb.n<3;i++){
+    const t=st.tray[i];
+    if(t>=0 && g.screws[t].c===nb.c){ st.tray[i]=-1; putInBox(g,st,b,t,ev,i); }
+  }
+}
+function checkStuck(g,st){
+  st.won = st.done===g.screws.length;
+  st.stuck = !st.won && st.tray.indexOf(-1)<0 &&
+    !g.screws.some((s,i)=>!st.goneS[i] && boxFor(st,s.c)>=0 && isFree(g,st,i));
+}
+// Returns {r:'locked'|'full'|'ok'|'none', ev:[...]}
+function tapLogic(g,st,id){
+  if(st.goneS[id]) return {r:'none'};
+  if(!isFree(g,st,id)) return {r:'locked'};
+  const s=g.screws[id], b=boxFor(st,s.c);
+  let ti=-1;
+  if(b<0){ ti=st.tray.indexOf(-1); if(ti<0) return {r:'full'}; }
+  const ev=[];
+  st.goneS[id]=1; st.done++;
+  if(--st.left[s.p]===0){ st.goneP[s.p]=1; ev.push({t:'drop',p:s.p}); }
+  if(b>=0) putInBox(g,st,b,id,ev);
+  else { st.tray[ti]=id; ev.push({t:'tray',s:id,i:ti}); }
+  checkStuck(g,st);
+  return {r:'ok',ev};
+}
+function simulate(g,order){
+  const st=newGame(g); let mx=0;
+  for(const id of order){
+    const r=tapLogic(g,st,id);
+    if(r.r!=='ok'||st.stuck) return {ok:false,maxTray:mx};
+    mx=Math.max(mx,st.tray.filter(x=>x>=0).length);
+  }
+  return {ok:st.won,maxTray:mx};
+}
+
+// Plates are stacked bottom-up; any order that only taps free screws is valid,
+// so a random valid order becomes the intended solution and the box queue follows it.
+function genLevel(L){
+  const P=levelParams(L), rnd=mulberry32(L*7919+101);
+  let nPlates=P.plates;
+  for(let attempt=0;;attempt++){
+    if(attempt && attempt%25===0 && nPlates>2) nPlates--;
+    const plates=[], pts=[];
+    let prevTint=-1;
+    for(let i=0;i<nPlates;i++){
+      let best=null, bs=-1e9;
+      for(let c=0;c<60;c++){
+        const pl=candidate(rnd,L,P); if(!pl) continue;
+        const sp=spotsOf(pl,pl.k);
+        if(sp.some(([x,y])=>pts.some(q=>Math.hypot(q.x-x,q.y-y)<SPACE_OTHER))) continue;
+        let cov=0; for(const q of pts) if(plateSD(pl,q.x,q.y)<HEAD_R) cov++;
+        let sc=-Math.abs(cov-P.cover)+rnd()*.9+pl.k*.5;
+        if(i>0&&cov===0) sc-=1.5;
+        for(const o of plates) if(Math.hypot(o.cx-pl.cx,o.cy-pl.cy)<45) sc-=1;
+        if(sc>bs){bs=sc; best=pl}
+      }
+      if(!best) break;
+      let t=Math.floor(rnd()*NTINTS); if(t===prevTint) t=(t+1)%NTINTS;
+      best.id=i; best.tint=prevTint=t; plates.push(best);
+      spotsOf(best,best.k).forEach(([x,y])=>pts.push({x,y}));
+    }
+    if(plates.length<nPlates || !fixTotal(plates,L,rnd)) continue;
+    // Center the whole composition on the board
+    let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9;
+    for(const p of plates) for(const q of p.parts){
+      const m=q.R||0, pts = q.R ? [[q.x,q.y]] : [[q.x-q.w/2,q.y-q.h/2],[q.x+q.w/2,q.y-q.h/2],[q.x-q.w/2,q.y+q.h/2],[q.x+q.w/2,q.y+q.h/2]];
+      for(const [lx,ly] of pts){ const [x,y]=toWorld(p,lx,ly); x0=Math.min(x0,x-m); y0=Math.min(y0,y-m); x1=Math.max(x1,x+m); y1=Math.max(y1,y+m); }
+    }
+    const sx=(AREA.x0+AREA.x1-x0-x1)/2, sy=(AREA.y0+AREA.y1-y0-y1)/2;
+    plates.forEach(p=>{p.cx+=sx; p.cy+=sy});
+    const screws=[];
+    for(const p of plates) p.sets[p.k].forEach(([lx,ly])=>{const [x,y]=toWorld(p,lx,ly); screws.push({id:screws.length,p:p.id,lx,ly,x,y,c:0})});
+    const outPlates=plates.map(({id,kind,parts,a,cx,cy,tint})=>({id,kind,parts,a,cx,cy,tint}));
+    // Random valid removal order
+    const goneP=plates.map(()=>0), goneS=screws.map(()=>0), left=plates.map(p=>p.k), order=[];
+    while(order.length<screws.length){
+      const free=screws.filter(s=>!goneS[s.id]&&freeAt(outPlates,goneP,s));
+      const s=free[Math.floor(rnd()*free.length)];
+      goneS[s.id]=1; order.push(s.id); if(--left[s.p]===0) goneP[s.p]=1;
+    }
+    // Box queue (balanced deck of colors), then screw colors along the intended order
+    const nb=screws.length/3, C=Math.min(P.colors,nb), pal=shuffle([...Array(NCOLORS).keys()],rnd).slice(0,C);
+    const queue=[]; let deck=[];
+    while(queue.length<nb){
+      if(!deck.length) deck=shuffle(pal.slice(),rnd);
+      let c=deck.pop();
+      if(queue.length && c===queue[queue.length-1] && deck.length){ const d=deck.pop(); deck.push(c); c=d; }
+      queue.push(c);
+    }
+    const g={L, P, plates:outPlates, screws, queue, order, maxTray:0};
+    for(let m=P.mix;m>=1;m--) for(let t=0;t<(m>1?30:1);t++){
+      const seq=[];
+      for(let i=0;i<nb;i+=m){ const part=[]; queue.slice(i,i+m).forEach(c=>part.push(c,c,c)); seq.push(...(m>1?shuffle(part,rnd):part)); }
+      order.forEach((id,i)=>screws[id].c=seq[i]);
+      const r=simulate(g,order);
+      if(r.ok && r.maxTray<=P.trayMax){ g.maxTray=r.maxTray; g.mix=m; return g; }
+    }
+  }
+}
+// GEN-END
+
+// Screw head colors and acrylic plate tints (main, light, dark)
+const COLORS = [
+  {c:'#ff3b5c',l:'#ffa3b3',d:'#b3112f'}, // red
+  {c:'#2f7bff',l:'#a3c6ff',d:'#1446b3'}, // blue
+  {c:'#ffc928',l:'#fff0a8',d:'#c48a00'}, // yellow
+  {c:'#22c96b',l:'#a0f2c3',d:'#0e8443'}, // green
+  {c:'#9b4dff',l:'#d6b6ff',d:'#5e1fb8'}, // purple
+  {c:'#ff7a1a',l:'#ffc493',d:'#b84a00'}, // orange
+  {c:'#ff4fc3',l:'#ffb5e8',d:'#b3168a'}, // pink
+  {c:'#16c8e0',l:'#a3f2fc',d:'#0a8496'}, // cyan
+];
+const TINTS = [
+  {c:'#6cc8ff',l:'#c8eeff',d:'#2f8fd6'}, {c:'#ff8fc4',l:'#ffd6ea',d:'#d9529a'},
+  {c:'#7ee8b0',l:'#d2f9e4',d:'#2fb877'}, {c:'#b99bff',l:'#e7ddff',d:'#7a5ad9'},
+  {c:'#ffcc66',l:'#fff1cc',d:'#e09a1f'}, {c:'#62e3dc',l:'#ccf8f5',d:'#1fa8a1'},
+  {c:'#ffa585',l:'#ffdfd2',d:'#e0643f'}, {c:'#c4ec6a',l:'#eefccb',d:'#86b52a'},
+];
+function rgba(hex,a){const n=parseInt(hex.slice(1),16); return `rgba(${n>>16},${n>>8&255},${n&255},${a})`}
+
+// ---------- Layout ----------
+const BOARD = {x:10, y:246, w:400, h:544};
+const BOX_X = [112, 308], BOX_Y = 112;
+const SOCK = [[-36,-19],[0,-19],[36,-19]];
+const TRAY_Y = 206;
+const trayX = i => VW/2 + (i-(S.st.tray.length-1)/2)*58;
+let RS = 1; // offscreen render scale for plate images
+
+// ---------- Audio ----------
+let AC=null, muted=false;
+try{ muted = localStorage.getItem('bsp_muted')==='1' }catch(e){}
+function tone(f,dur,type='sine',vol=.12,slide=0,delay=0){
+  if(muted) return;
+  try{
+    if(!AC) AC = new (window.AudioContext||window.webkitAudioContext)();
+    const t = AC.currentTime+delay, o=AC.createOscillator(), g=AC.createGain();
+    o.type=type; o.frequency.setValueAtTime(f,t);
+    if(slide) o.frequency.exponentialRampToValueAtTime(f*slide,t+dur);
+    g.gain.setValueAtTime(vol,t); g.gain.exponentialRampToValueAtTime(.0001,t+dur);
+    o.connect(g).connect(AC.destination); o.start(t); o.stop(t+dur+.02);
+  }catch(e){}
+}
+const sfx = {
+  unscrew(){tone(480,.2,'triangle',.07,2.4); [0,.06,.12].forEach((d,i)=>tone(1500+i*200,.025,'square',.02,1,d))},
+  land(n){tone(760+n*150,.08,'sine',.1); tone(1520+n*300,.05,'triangle',.035,1,.02)},
+  tray(){tone(320,.1,'triangle',.09,.8)},
+  locked(){tone(150,.15,'square',.06,.7); buzz(25)},
+  no(){tone(220,.22,'sawtooth',.05,.7); buzz([20,40,20])},
+  close(){tone(300,.08,'square',.04,.6)},
+  box(){[659,784,988,1319].forEach((f,i)=>tone(f,.14,'triangle',.09,0,i*.06))},
+  plate(){tone(420,.45,'sine',.07,.3)},
+  slide(){tone(260,.14,'sine',.04,1.7)},
+  win(){[523,659,784,1047,784,1047].forEach((f,i)=>tone(f,.2,'triangle',.11,0,i*.1))},
+  lose(){[392,330,262].forEach((f,i)=>tone(f,.25,'triangle',.1,0,i*.14))},
+};
+function buzz(p){try{navigator.vibrate&&navigator.vibrate(p)}catch(e){}}
+
+// ---------- State ----------
+let S = null;
+let saved = 1;
+try{ saved = Math.max(1, parseInt(localStorage.getItem('parafusos_level'))||1) }catch(e){}
+// Best score per level: {level: points}
+let best = {};
+try{ best = JSON.parse(localStorage.getItem('parafusos_best'))||{} }catch(e){}
+const fmt = n=>Math.round(n).toLocaleString('pt-BR');
+const totalBest = ()=>Object.values(best).reduce((a,b)=>a+b,0);
+function renderPts(){
+  $('pts').innerHTML = `⭐ <b>${fmt(S.shown)}</b> &nbsp;🏆 ${fmt(best[S.level]||0)}`;
+}
+
+// Scoring
+const PTS = {screw:10, box:40, comboWindow:4, maxCombo:5, plate:25, freeSlot:30, noRescue:100};
+
+function startLevel(L){
+  const g = genLevel(L);
+  S = {
+    level:L, g, st:newGame(g),
+    pl: g.plates.map(p=>({...p, st:'on', x:p.cx, y:p.cy, ang:p.a, sc:1, flash:0, vx:0, vy:0, va:0, dropT:0})),
+    sc: g.screws.map(s=>({id:s.id, x:s.x, y:s.y, c:s.c, p:s.p, st:'board', t:0, rot:(s.id*1.7)%Math.PI, shake:0, dest:null, trayI:-1})),
+    slots:[[],[]], vis:{}, parts:[], floats:[], time:0, taps:0,
+    score:0, shown:0, pts:{screws:0,boxes:0,combo:0,plates:0}, combo:0, lastBox:-99,
+    maxTray:0, rescued:false, over:false, overKind:'', loseT:0, endT:0,
+  };
+  g.queue.slice(0,2).forEach((c,i)=>addBox(i,i,c,i*.12));
+  renderPlates();
+  $('lvl').textContent = 'Nível '+L;
+  renderPts();
+}
+
+function addBox(slot,uid,c,delay=0){
+  const v={uid,c,slot,st:'wait',t:0,delay,landed:0,full:false};
+  S.vis[uid]=v; S.slots[slot].push(v);
+}
+const boxReady = uid => S.vis[uid] && S.vis[uid].st==='open';
+
+function tapScrew(id){
+  const v=S.sc[id], r=tapLogic(S.g,S.st,id);
+  if(r.r==='locked'){
+    v.shake=.35; sfx.locked();
+    blockersOf(S.g.plates,S.st.goneP,S.g.screws[id]).forEach(p=>S.pl[p].flash=1);
+    return;
+  }
+  if(r.r==='full'){
+    // Misclick on a full tray is only a warning; losing needs a true stuck state
+    v.shake=.4; sfx.no(); toast('Bandeja cheia!');
+    return;
+  }
+  if(r.r!=='ok') return;
+  S.taps++; S.score+=PTS.screw; S.pts.screws+=PTS.screw;
+  v.st='out'; v.t=0; sfx.unscrew(); buzz(8);
+  for(const e of r.ev){
+    if(e.t==='drop'){ const p=S.pl[e.p]; p.st='pre'; p.dropT=.32; }
+    else if(e.t==='tray'){ v.dest={k:'tray'}; v.trayI=e.i; }
+    else if(e.t==='box') S.sc[e.s].dest={k:'box',uid:e.uid,idx:e.idx};
+    else if(e.t==='done') S.vis[e.uid].full=true;
+    else if(e.t==='new') addBox(e.slot,e.uid,e.c);
+  }
+  S.maxTray=Math.max(S.maxTray,S.st.tray.filter(x=>x>=0).length);
+  if(S.st.stuck){ S.over=true; S.loseT=1.1; }
+}
+
+function useRescue(){
+  if(S.rescued||S.overKind!=='lose') return;
+  S.rescued=true; S.st.tray.push(-1); checkStuck(S.g,S.st);
+  S.over=false; S.overKind=''; hideOverlay();
+  toast('Espaço extra na bandeja!');
+}
+
+// ---------- Poses ----------
+const ease = t=>t<.5?2*t*t:1-Math.pow(-2*t+2,2)/2;
+const easeIn = t=>t*t*t;
+const easeOut = t=>1-Math.pow(1-t,3);
+const easeBack = t=>{const c=1.7; return 1+(c+1)*Math.pow(t-1,3)+c*Math.pow(t-1,2)};
+function boxPose(v){
+  const bx=BOX_X[v.slot], side=v.slot?1:-1;
+  switch(v.st){
+    case 'in': return {x:bx+side*260*(1-easeBack(Math.min(1,v.t))), y:BOX_Y, r:0};
+    case 'out': { const e=easeIn(Math.min(1,v.t)); return {x:bx+side*280*e, y:BOX_Y-24*e, r:side*.35*e}; }
+    case 'open': case 'closing': return {x:bx, y:BOX_Y, r:0};
+  }
+  return null;
+}
+function sockWorld(v,idx){
+  const p=boxPose(v); if(!p) return [BOX_X[v.slot],BOX_Y];
+  const [lx,ly]=SOCK[idx], c=Math.cos(p.r), s=Math.sin(p.r);
+  return [p.x+lx*c-ly*s, p.y+lx*s+ly*c];
+}
+function flyTarget(v){
+  if(v.dest.k==='box' && boxReady(v.dest.uid)) return sockWorld(S.vis[v.dest.uid],v.dest.idx);
+  if(v.trayI>=0) return [trayX(v.trayI),TRAY_Y];
+  return [v.x,v.y-14];
+}
+
+// ---------- Update ----------
+function confetti(x,y,n,color){
+  for(let i=0;i<n;i++){
+    const a=Math.random()*Math.PI*2, s=120+Math.random()*260;
+    S.parts.push({x,y,vx:Math.cos(a)*s,vy:Math.sin(a)*s-160,r:Math.random()*6,vr:(Math.random()-.5)*12,
+      c:color||COLORS[Math.floor(Math.random()*NCOLORS)].c,life:1+Math.random()*.6});
+  }
+}
+function startFly(v,x,y){v.st='fly'; v.t=0; v.fx=x; v.fy=y}
+
+function update(dt){
+  S.time+=dt;
+  // Screws
+  for(const v of S.sc){
+    if(v.shake>0) v.shake=Math.max(0,v.shake-dt);
+    if(v.st==='out'){
+      v.t+=dt/.3; v.rot-=dt*24;
+      if(v.t>=1){ v.t=1; v.st='hold'; }
+    }else if(v.st==='hold'){
+      v.rot-=dt*5;
+      if(v.dest.k==='tray'||boxReady(v.dest.uid)) startFly(v,v.x,v.y-14);
+    }else if(v.st==='fly'){
+      v.t+=dt/.38; v.rot-=dt*9;
+      if(v.t>=1){
+        if(v.dest.k==='box' && boxReady(v.dest.uid)){ v.st='box'; const b=S.vis[v.dest.uid]; b.landed++; sfx.land(b.landed); }
+        else { v.st='tray'; sfx.tray(); }
+      }
+    }else if(v.st==='tray'){
+      if(v.dest.k==='box' && boxReady(v.dest.uid)) startFly(v,trayX(v.trayI),TRAY_Y);
+    }
+  }
+  // Boxes: each slot plays its queue of boxes in order
+  for(const q of S.slots){
+    const v=q[0]; if(!v) continue;
+    if(v.st==='wait'){ v.delay-=dt; if(v.delay<=0){ v.st='in'; v.t=0; sfx.slide(); } }
+    else if(v.st==='in'){ v.t+=dt/.42; if(v.t>=1) v.st='open'; }
+    else if(v.st==='open'){ if(v.full && v.landed>=3){ v.st='closing'; v.t=0; sfx.close(); } }
+    else if(v.st==='closing'){
+      v.t+=dt/.26;
+      if(v.t>=1){
+        v.st='out'; v.t=0;
+        // Quick consecutive boxes build a combo multiplier
+        S.combo = S.time-S.lastBox<=PTS.comboWindow ? Math.min(PTS.maxCombo,S.combo+1) : 1;
+        S.lastBox=S.time;
+        const gain=PTS.box*S.combo;
+        S.score+=gain; S.pts.boxes+=PTS.box; S.pts.combo+=gain-PTS.box;
+        S.floats.push({x:BOX_X[v.slot],y:BOX_Y+66,text:'+'+gain+(S.combo>1?'  Combo x'+S.combo+'!':''),life:1.2,combo:S.combo>1});
+        confetti(BOX_X[v.slot],BOX_Y,26,COLORS[v.c].c); sfx.box(); buzz(15);
+      }
+    }else if(v.st==='out'){
+      v.t+=dt/.32;
+      if(v.t>=1){ v.st='gone'; q.shift(); S.sc.forEach(s=>{ if(s.st==='box'&&s.dest.uid===v.uid) s.st='gone' }); }
+    }
+  }
+  // Plates
+  for(const p of S.pl){
+    if(p.flash>0) p.flash=Math.max(0,p.flash-dt*2.4);
+    if(p.st==='pre'){
+      p.dropT-=dt;
+      if(p.dropT<=0){
+        p.st='fall'; p.vy=-140; p.vx=(Math.random()-.5)*140; p.va=(Math.random()-.5)*3.2;
+        S.score+=PTS.plate; S.pts.plates+=PTS.plate; sfx.plate(); buzz(12);
+        S.floats.push({x:p.x,y:p.y,text:'+'+PTS.plate,life:1,combo:false});
+      }
+    }else if(p.st==='fall'){
+      p.vy+=1500*dt; p.x+=p.vx*dt; p.y+=p.vy*dt; p.ang+=p.va*dt; p.sc=Math.max(.72,p.sc-dt*.3);
+      if(p.y>VH+260) p.st='gone';
+    }
+  }
+  // Confetti
+  for(let i=S.parts.length-1;i>=0;i--){
+    const p=S.parts[i]; p.vy+=520*dt; p.vx*=.99; p.x+=p.vx*dt; p.y+=p.vy*dt; p.r+=p.vr*dt; p.life-=dt;
+    if(p.life<=0) S.parts.splice(i,1);
+  }
+  for(let i=S.floats.length-1;i>=0;i--){
+    const f=S.floats[i]; f.y-=40*dt; f.life-=dt;
+    if(f.life<=0) S.floats.splice(i,1);
+  }
+  // HUD score counts up smoothly
+  if(S.shown<S.score){ S.shown=Math.min(S.score,S.shown+Math.max(1,Math.ceil((S.score-S.shown)*.15))); renderPts(); }
+
+  if(S.loseT>0){ S.loseT-=dt; if(S.loseT<=0) onLose(); }
+  if(S.over) return;
+  // Win once everything has settled
+  const settled = S.pl.every(p=>p.st==='gone') && !S.sc.some(v=>v.st==='out'||v.st==='hold'||v.st==='fly') && !S.slots[0].length && !S.slots[1].length;
+  if(S.st.won && settled){ S.endT+=dt; if(S.endT>.35) onWin(); }
+}
+
+// ---------- Drawing ----------
+function rr(x,y,w,h,r,c=ctx){c.beginPath();rrSub(x,y,w,h,r,c)}
+function rrSub(x,y,w,h,r,c=ctx){c.moveTo(x+r,y);c.arcTo(x+w,y,x+w,y+h,r);c.arcTo(x+w,y+h,x,y+h,r);c.arcTo(x,y+h,x,y,r);c.arcTo(x,y,x+w,y,r);c.closePath()}
+function circle(x,y,r,c=ctx){c.beginPath();c.arc(x,y,r,0,Math.PI*2)}
+
+// Plates are pre-rendered (local frame) so translucency stays clean across overlapping parts
+function renderPlates(){ for(const p of S.pl) renderPlate(p) }
+function renderPlate(p){
+  let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9;
+  for(const q of p.parts){ const hw=q.R||q.w/2, hh=q.R||q.h/2; x0=Math.min(x0,q.x-hw); y0=Math.min(y0,q.y-hh); x1=Math.max(x1,q.x+hw); y1=Math.max(y1,q.y+hh); }
+  const pad=4; p.bx=x0-pad; p.by=y0-pad; p.bw=x1-x0+pad*2; p.bh=y1-y0+pad*2;
+  const mk=()=>{const c=document.createElement('canvas'); c.width=Math.ceil(p.bw*RS); c.height=Math.ceil(p.bh*RS);
+    const x=c.getContext('2d'); x.setTransform(RS,0,0,RS,-p.bx*RS,-p.by*RS); return [c,x]};
+  const holes=S.g.screws.filter(s=>s.p===p.id);
+  const path=c=>{c.beginPath(); for(const q of p.parts){ if(q.R){c.moveTo(q.x+q.R,q.y); c.arc(q.x,q.y,q.R,0,Math.PI*2)} else rrSub(q.x-q.w/2,q.y-q.h/2,q.w,q.h,q.r,c) }};
+  const cut=c=>{c.globalCompositeOperation='destination-out'; holes.forEach(s=>{circle(s.lx,s.ly,11,c); c.fill()}); c.globalCompositeOperation='source-over'};
+  // Shadow silhouette
+  const [sh,s]=mk(); path(s); s.fillStyle='#000'; s.fill(); cut(s); p.shadow=sh;
+  const [img,c]=mk(), T=TINTS[p.tint];
+  path(c); let g=c.createLinearGradient(x0,y0,x1*.3,y1); g.addColorStop(0,T.l); g.addColorStop(.45,T.c); g.addColorStop(1,T.d); c.fillStyle=g; c.fill();
+  c.save(); path(c); c.clip();
+  // Inner rim and glossy highlights
+  path(c); c.lineWidth=8; c.strokeStyle=rgba(T.d,.45); c.stroke();
+  path(c); c.lineWidth=3; c.strokeStyle='rgba(255,255,255,.35)'; c.save(); c.translate(1.5,2); c.stroke(); c.restore();
+  for(const q of p.parts){
+    c.fillStyle='rgba(255,255,255,.42)';
+    if(q.R){ c.beginPath(); c.ellipse(q.x-q.R*.22,q.y-q.R*.52,q.R*.58,q.R*.2,-.25,0,Math.PI*2); c.fill(); }
+    else { rr(q.x-q.w/2+8,q.y-q.h/2+5,q.w-16,Math.min(q.h*.28,15),Math.min(q.r,8),c); c.fill(); }
+  }
+  c.fillStyle='rgba(255,255,255,.13)';
+  for(const k of [-.25,.2]){ c.save(); c.translate((x0+x1)/2+(x1-x0)*k,(y0+y1)/2); c.rotate(.5); c.fillRect(-9,-400,18,800); c.restore(); }
+  // Countersunk screw holes
+  holes.forEach(s=>{ circle(s.lx,s.ly,16.5,c); c.fillStyle=rgba(T.d,.5); c.fill();
+    circle(s.lx,s.ly,16.5,c); c.lineWidth=1.5; c.strokeStyle='rgba(255,255,255,.5)'; c.stroke(); });
+  cut(c);
+  holes.forEach(s=>{ c.beginPath(); c.arc(s.lx,s.ly,11.6,.1*Math.PI,.9*Math.PI); c.lineWidth=2; c.strokeStyle=rgba(T.d,.9); c.stroke(); });
+  c.restore();
+  path(c); c.lineWidth=2.2; c.strokeStyle=T.d; c.stroke();
+  p.img=img;
+}
+
+function drawPlate(p){
+  const fall=p.st==='fall', k=fall?Math.min(1,(p.y-p.cy)/300):0;
+  ctx.save(); ctx.translate(p.x+5+k*14,p.y+8+k*26); ctx.rotate(p.ang); ctx.scale(p.sc,p.sc);
+  ctx.globalAlpha=.3*(1-k*.5); ctx.drawImage(p.shadow,p.bx,p.by,p.bw,p.bh); ctx.restore();
+  ctx.save(); ctx.translate(p.x,p.y); ctx.rotate(p.ang); ctx.scale(p.sc,p.sc);
+  ctx.globalAlpha=.86; ctx.drawImage(p.img,p.bx,p.by,p.bw,p.bh);
+  if(p.flash>0){ ctx.globalCompositeOperation='lighter'; ctx.globalAlpha=p.flash*.5; ctx.drawImage(p.img,p.bx,p.by,p.bw,p.bh); }
+  ctx.restore();
+}
+
+// Metallic screw: silver washer, glossy colored head, cross slot; optional shank when lifted
+function drawScrew(x,y,ci,rot,sc=1,shank=0,shOff=0){
+  const col=COLORS[ci], R=HEAD_R*sc, r2=R*.74;
+  ctx.fillStyle='rgba(10,0,30,.35)'; circle(x+2+shOff*.4,y+3+shOff,R); ctx.fill();
+  if(shank>0){
+    const w=5*sc, L=shank;
+    let g=ctx.createLinearGradient(x-w,0,x+w,0); g.addColorStop(0,'#7d829a'); g.addColorStop(.45,'#f4f6fb'); g.addColorStop(1,'#5f6480');
+    ctx.fillStyle=g; ctx.beginPath(); ctx.moveTo(x-w,y); ctx.lineTo(x+w,y); ctx.lineTo(x+w*.8,y+L); ctx.lineTo(x,y+L+w); ctx.lineTo(x-w*.8,y+L); ctx.closePath(); ctx.fill();
+    ctx.strokeStyle='rgba(50,54,80,.55)'; ctx.lineWidth=1.2;
+    const ph=((-rot*3)%4+4)%4;
+    for(let k=ph+3;k<L;k+=4){ ctx.beginPath(); ctx.moveTo(x-w*.85,k+y); ctx.lineTo(x+w*.85,k+y-2.5); ctx.stroke(); }
+  }
+  let g=ctx.createLinearGradient(x-R,y-R,x+R,y+R); g.addColorStop(0,'#ffffff'); g.addColorStop(.5,'#bcc1d4'); g.addColorStop(1,'#666b88');
+  circle(x,y,R); ctx.fillStyle=g; ctx.fill();
+  ctx.lineWidth=1; ctx.strokeStyle='rgba(40,30,70,.5)'; ctx.stroke();
+  g=ctx.createRadialGradient(x-r2*.35,y-r2*.4,r2*.1,x,y,r2*1.05); g.addColorStop(0,col.l); g.addColorStop(.5,col.c); g.addColorStop(1,col.d);
+  circle(x,y,r2); ctx.fillStyle=g; ctx.fill();
+  ctx.save(); ctx.translate(x,y); ctx.rotate(rot); ctx.lineCap='round';
+  const a=r2*.56;
+  ctx.strokeStyle='rgba(255,255,255,.5)'; ctx.lineWidth=3*sc;
+  ctx.beginPath(); ctx.moveTo(-a+.9,.9); ctx.lineTo(a+.9,.9); ctx.moveTo(.9,-a+.9); ctx.lineTo(.9,a+.9); ctx.stroke();
+  ctx.strokeStyle=rgba(col.d,.95); ctx.lineWidth=3*sc;
+  ctx.beginPath(); ctx.moveTo(-a,0); ctx.lineTo(a,0); ctx.moveTo(0,-a); ctx.lineTo(0,a); ctx.stroke();
+  ctx.restore();
+  ctx.fillStyle='rgba(255,255,255,.75)'; ctx.beginPath(); ctx.ellipse(x-r2*.42,y-r2*.48,r2*.26,r2*.14,-.7,0,Math.PI*2); ctx.fill();
+}
+
+function drawScrewVis(v){
+  let x=v.x, y=v.y;
+  if(v.shake>0) x+=Math.sin(S.time*70)*3.5*(v.shake/.35);
+  if(v.st==='board') return drawScrew(x,y,v.c,v.rot);
+  if(v.st==='out'||v.st==='hold'){
+    const e=easeOut(v.t), bob=v.st==='hold'?Math.sin(S.time*8)*1.5:0, lift=14*e+bob;
+    return drawScrew(x,y-lift,v.c,v.rot,1+.15*e,lift+5,lift*.6);
+  }
+  if(v.st==='fly'){
+    const [tx,ty]=flyTarget(v), t=ease(Math.min(1,v.t)), ts=v.dest.k==='box'&&boxReady(v.dest.uid)?.86:.95;
+    const px=v.fx+(tx-v.fx)*t, py=v.fy+(ty-v.fy)*t-Math.sin(t*Math.PI)*60;
+    return drawScrew(px,py,v.c,v.rot,1.15+(ts-1.15)*t,19*(1-t),8*(1-t));
+  }
+  if(v.st==='tray') return drawScrew(trayX(v.trayI),TRAY_Y,v.c,v.rot,.95);
+}
+
+function drawBox(v){
+  const p=boxPose(v); if(!p) return;
+  const col=COLORS[v.c], closed=v.st==='closing'||v.st==='out', lid=v.st==='closing'?easeOut(Math.min(1,v.t)):v.st==='out'?1:0;
+  ctx.save(); ctx.translate(p.x,p.y); ctx.rotate(p.r);
+  ctx.fillStyle='rgba(10,0,30,.3)'; rr(-64,-30,132,88,18); ctx.fill();
+  rr(-66,-38,132,88,18); ctx.fillStyle=col.d; ctx.fill();
+  let g=ctx.createLinearGradient(0,-46,0,40); g.addColorStop(0,col.l); g.addColorStop(.35,col.c); g.addColorStop(1,col.d);
+  rr(-66,-46,132,86,18); ctx.fillStyle=g; ctx.fill();
+  ctx.fillStyle='rgba(255,255,255,.35)'; rr(-58,-43,52,5,2.5); ctx.fill();
+  // Well with three sockets
+  rr(-56,-37,112,36,13); ctx.fillStyle='rgba(30,10,50,.3)'; ctx.fill();
+  SOCK.forEach(([sx,sy])=>{ circle(sx,sy,12.5); ctx.fillStyle='rgba(20,5,40,.35)'; ctx.fill();
+    ctx.beginPath(); ctx.arc(sx,sy,12.5,.15*Math.PI,.85*Math.PI); ctx.lineWidth=1.5; ctx.strokeStyle='rgba(255,255,255,.4)'; ctx.stroke(); });
+  for(const s of S.sc) if(s.st==='box'&&s.dest.uid===v.uid){ const [sx,sy]=SOCK[s.dest.idx]; drawScrew(sx,sy,s.c,s.rot,.86); }
+  if(lid>0){
+    const ly=-48-46*(1-lid);
+    ctx.globalAlpha=Math.min(1,lid*1.6);
+    g=ctx.createLinearGradient(0,ly,0,ly+42); g.addColorStop(0,col.l); g.addColorStop(1,col.c);
+    rr(-62,ly,124,42,15); ctx.fillStyle=g; ctx.fill(); ctx.lineWidth=2; ctx.strokeStyle=col.d; ctx.stroke();
+    ctx.fillStyle='rgba(255,255,255,.45)'; rr(-12,ly,24,42,4); ctx.fill();
+    ctx.globalAlpha=1;
+  }
+  // Cute face
+  const fy=18, blink=((S.time+v.uid*1.37)%3.4)<.13;
+  ctx.fillStyle='#2a1450'; ctx.strokeStyle='#2a1450'; ctx.lineWidth=3; ctx.lineCap='round';
+  for(const ex of [-17,17]){
+    if(closed){ ctx.beginPath(); ctx.arc(ex,fy+3,5,1.15*Math.PI,1.85*Math.PI); ctx.stroke(); }
+    else if(blink){ ctx.beginPath(); ctx.moveTo(ex-4,fy); ctx.lineTo(ex+4,fy); ctx.stroke(); }
+    else { ctx.beginPath(); ctx.ellipse(ex,fy,4,5.2,0,0,Math.PI*2); ctx.fill(); circle(ex+1.4,fy-1.8,1.5); ctx.fillStyle='#fff'; ctx.fill(); ctx.fillStyle='#2a1450'; }
+  }
+  ctx.fillStyle='rgba(255,90,150,.45)'; ctx.beginPath(); ctx.ellipse(-31,fy+8,7,4,0,0,Math.PI*2); ctx.ellipse(31,fy+8,7,4,0,0,Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(0,fy+5,closed?7:5,.12*Math.PI,.88*Math.PI); ctx.lineWidth=2.6; ctx.stroke();
+  ctx.restore();
+}
+
+function draw(){
+  ctx.clearRect(0,0,VW,VH);
+
+  // Shelf and empty box pads
+  rr(14,138,392,30,15); ctx.fillStyle='rgba(255,255,255,.07)'; ctx.fill();
+  for(let i=0;i<2;i++){
+    if(S.slots[i].length) continue;
+    rr(BOX_X[i]-66,BOX_Y-46,132,88,18); ctx.fillStyle='rgba(255,255,255,.05)'; ctx.fill();
+    ctx.setLineDash([6,6]); ctx.lineWidth=2; ctx.strokeStyle='rgba(255,255,255,.22)'; ctx.stroke(); ctx.setLineDash([]);
+  }
+  // Upcoming boxes preview
+  const up=S.g.queue.slice(S.st.qi,S.st.qi+3), rest=S.g.queue.length-S.st.qi-up.length;
+  ctx.textAlign='center'; ctx.fillStyle='rgba(255,255,255,.6)'; ctx.font='800 12px "Baloo 2",sans-serif';
+  if(up.length) ctx.fillText('próx.',VW/2,78);
+  up.forEach((c,i)=>{ const y=90+i*24, col=COLORS[c];
+    rr(VW/2-14,y,28,19,6); ctx.fillStyle=col.d; ctx.fill(); rr(VW/2-14,y-2,28,18,6); ctx.fillStyle=col.c; ctx.fill();
+    ctx.fillStyle='rgba(255,255,255,.4)'; rr(VW/2-10,y,12,3,1.5); ctx.fill(); });
+  if(rest>0){ ctx.fillStyle='rgba(255,255,255,.6)'; ctx.fillText('+'+rest,VW/2,170); }
+  for(const q of S.slots){ if(q[0]) drawBox(q[0]); }
+
+  // Tray
+  const n=S.st.tray.length, used=S.st.tray.filter(x=>x>=0).length, warn=used>=n-1;
+  const tw=n*58+14;
+  rr(VW/2-tw/2,TRAY_Y-27,tw,54,27); ctx.fillStyle='rgba(15,5,40,.45)'; ctx.fill();
+  ctx.lineWidth=2.5; ctx.strokeStyle=warn?`rgba(255,77,141,${.55+.4*Math.sin(S.time*8)})`:'rgba(255,255,255,.18)'; ctx.stroke();
+  for(let i=0;i<n;i++){
+    const x=trayX(i), g=ctx.createRadialGradient(x,TRAY_Y-4,2,x,TRAY_Y,19);
+    g.addColorStop(0,'rgba(0,0,0,.45)'); g.addColorStop(1,'rgba(255,255,255,.07)');
+    circle(x,TRAY_Y,19); ctx.fillStyle=g; ctx.fill();
+  }
+  for(const v of S.sc) if(v.st==='tray') drawScrewVis(v);
+
+  // Pegboard
+  rr(BOARD.x,BOARD.y,BOARD.w,BOARD.h,24);
+  let g=ctx.createLinearGradient(0,BOARD.y,0,BOARD.y+BOARD.h); g.addColorStop(0,'#3d3178'); g.addColorStop(1,'#231a4c');
+  ctx.fillStyle=g; ctx.fill(); ctx.lineWidth=3; ctx.strokeStyle='#5d4ea0'; ctx.stroke();
+  ctx.beginPath();
+  for(let x=BOARD.x+20;x<BOARD.x+BOARD.w-8;x+=24) for(let y=BOARD.y+20;y<BOARD.y+BOARD.h-8;y+=24){ ctx.moveTo(x+2.6,y); ctx.arc(x,y,2.6,0,Math.PI*2); }
+  ctx.fillStyle='rgba(12,4,32,.5)'; ctx.fill();
+
+  // Plates bottom to top, each followed by its screws
+  for(const p of S.pl){
+    if(p.st==='gone') continue;
+    drawPlate(p);
+    for(const v of S.sc) if(v.p===p.id && v.st==='board') drawScrewVis(v);
+  }
+
+  // Tutorial pulse on the first level
+  if(S.level===1 && S.taps===0 && !S.over){
+    const v=S.sc.find(v=>v.st==='board'&&isFree(S.g,S.st,v.id)&&boxFor(S.st,v.c)>=0);
+    if(v){ const s=1+Math.sin(S.time*5)*.12; circle(v.x,v.y,24*s); ctx.lineWidth=4; ctx.strokeStyle='rgba(255,210,63,.95)'; ctx.stroke(); }
+  }
+
+  for(const v of S.sc) if(v.st==='out'||v.st==='hold') drawScrewVis(v);
+  for(const v of S.sc) if(v.st==='fly') drawScrewVis(v);
+
+  for(const p of S.parts){
+    ctx.save(); ctx.translate(p.x,p.y); ctx.rotate(p.r); ctx.globalAlpha=Math.min(1,p.life*2);
+    ctx.fillStyle=p.c; ctx.fillRect(-4,-2.5,8,5); ctx.restore();
+  }
+  ctx.globalAlpha=1;
+
+  // Floating score popups
+  ctx.textAlign='center'; ctx.lineJoin='round';
+  for(const f of S.floats){
+    ctx.globalAlpha=Math.min(1,f.life*2.5);
+    ctx.font=`800 ${f.combo?22:19}px "Baloo 2",sans-serif`;
+    const x=Math.max(90,Math.min(VW-90,f.x));
+    ctx.lineWidth=5; ctx.strokeStyle='#2a1450'; ctx.strokeText(f.text,x,f.y);
+    ctx.fillStyle=f.combo?'#ffd23f':'#fff'; ctx.fillText(f.text,x,f.y);
+  }
+  ctx.globalAlpha=1;
+}
+
+// ---------- Screens ----------
+function showOverlay(html){$('card').innerHTML=html; $('overlay').classList.add('show')}
+function hideOverlay(){$('overlay').classList.remove('show')}
+let toastT=0;
+function toast(msg){const t=$('toast'); t.textContent=msg; t.classList.add('show'); clearTimeout(toastT); toastT=setTimeout(()=>t.classList.remove('show'),1300)}
+
+function startScreen(){
+  showOverlay(`
+    <div class="logo">🔩</div>
+    <h1>Parafuso<br>Maluco</h1>
+    ${DEDICATION?`<p class="ded">${DEDICATION}</p>`:''}
+    <p>Toque nos parafusos livres para soltá-los. Se outra placa cobre o parafuso, ele fica travado.</p>
+    <p>Cada parafuso vai para a caixinha da sua cor; sem caixa, ele espera na bandeja.</p>
+    <p>Derrube todas as placas sem lotar a bandeja!</p>
+    ${totalBest()?`<p class="rec">🏆 Total de recordes: ${fmt(totalBest())}</p>`:''}
+    <button class="btn big" id="oPlay">Jogar · Nível ${saved}</button>`);
+  $('oPlay').onclick=()=>{hideOverlay(); startLevel(saved)};
+}
+
+function onWin(){
+  S.over=true; S.overKind='win';
+  saved=S.level+1; try{localStorage.setItem('parafusos_level',saved)}catch(e){}
+  confetti(VW/2,300,120); sfx.win(); buzz([30,60,30]);
+  // End-of-level bonuses
+  const free=Math.max(0,BASE_CAP-S.maxTray)*PTS.freeSlot, noRescue=S.rescued?0:PTS.noRescue;
+  S.score+=free+noRescue;
+  const prev=best[S.level]||0, isRecord=S.score>prev;
+  if(isRecord){ best[S.level]=S.score; try{localStorage.setItem('parafusos_best',JSON.stringify(best))}catch(e){} }
+  const row=(label,v)=>`<div class="${v?'':'z'}"><span>${label}</span><span>+${fmt(v)}</span></div>`;
+  setTimeout(()=>{
+    const msgs=['Tudo solto!','Arrasou, Ranny!','Que parafusada!','Mãos de mestre!','Mandou bem, Ranny!','Perfeito!'];
+    showOverlay(`<h2>${msgs[S.level%msgs.length]} 🎉</h2><p>Nível ${S.level} concluído</p>
+      <div class="rows">
+        ${row('Parafusos',S.pts.screws)}${row('Caixas fechadas',S.pts.boxes)}${row('Combos',S.pts.combo)}
+        ${row('Placas derrubadas',S.pts.plates)}${row('Bandeja livre',free)}${row('Sem resgate',noRescue)}
+      </div>
+      <div class="total">${fmt(S.score)} pontos</div>
+      ${isRecord?`<div class="rec new">🏆 Novo recorde!${prev?` (antes: ${fmt(prev)})`:''}</div>`
+                :`<div class="rec">🏆 Recorde: ${fmt(prev)}</div>`}
+      <div class="sum">Total de todos os níveis: ${fmt(totalBest())}</div>
+      <button class="btn big" id="oNext">Próximo nível</button>
+      <button class="btn big sec" id="oAgain">Jogar de novo</button>`);
+    $('oAgain').onclick=()=>{hideOverlay(); startLevel(S.level)};
+    $('oNext').onclick=()=>{hideOverlay(); startLevel(saved)};
+  },500);
+}
+
+function onLose(){
+  S.over=true; S.overKind='lose'; sfx.lose();
+  showOverlay(`<h2>Sem saída! 😵</h2>
+    <p>A bandeja lotou e nenhum parafuso livre cabe nas caixas.</p>
+    ${S.rescued?'':'<button class="btn big" id="oRescue">+1 espaço e continuar</button>'}
+    <button class="btn big sec" id="oRetry">Tentar de novo</button>`);
+  if(!S.rescued) $('oRescue').onclick=useRescue;
+  $('oRetry').onclick=()=>{hideOverlay(); startLevel(S.level)};
+}
+
+// ---------- Input & loop ----------
+cv.addEventListener('pointerdown',e=>{
+  if(!S||S.over) return;
+  const r=cv.getBoundingClientRect();
+  const px=(e.clientX-r.left)/r.width*VW, py=(e.clientY-r.top)/r.height*VH;
+  // Nearest free screw wins; otherwise the nearest covered one gets the locked shake
+  let fr=null, fd=25, lk=null, ld=25;
+  for(const v of S.sc){
+    if(v.st!=='board') continue;
+    const d=Math.hypot(v.x-px,v.y-py);
+    if(isFree(S.g,S.st,v.id)){ if(d<fd){fd=d; fr=v} } else if(d<ld){ld=d; lk=v}
+  }
+  const t=fr||lk; if(t) tapScrew(t.id);
+});
+$('bRestart').onclick=()=>{ if(S){hideOverlay(); startLevel(S.level)} };
+function syncMute(){$('bMute').textContent=muted?'🔇':'🔊'}
+$('bMute').onclick=()=>{muted=!muted; syncMute(); try{localStorage.setItem('bsp_muted',muted?'1':'0')}catch(e){}};
+syncMute();
+
+function fit(){
+  const vw=innerWidth, vh=innerHeight, s=Math.min(vw/VW,vh/VH);
+  stage.style.transform=`translate(${(vw-VW*s)/2}px,${(vh-VH*s)/2}px) scale(${s})`;
+  const dpr=Math.min(window.devicePixelRatio||1,3);
+  cv.width=Math.round(VW*s*dpr); cv.height=Math.round(VH*s*dpr);
+  ctx.setTransform(s*dpr,0,0,s*dpr,0,0);
+  const rs=Math.max(1,Math.min(3,s*dpr));
+  if(Math.abs(rs-RS)>.01){ RS=rs; if(S) renderPlates(); }
+}
+addEventListener('resize',fit); fit();
+
+let last=performance.now();
+function loop(now){
+  const dt=Math.min(.05,(now-last)/1000); last=now;
+  update(dt); draw();
+  requestAnimationFrame(loop);
+}
+startLevel(saved);
+startScreen();
+requestAnimationFrame(loop);
+
+// Offline support when served over http(s)
+if('serviceWorker' in navigator && location.protocol.startsWith('http')){
+  navigator.serviceWorker.register("../sw.js").catch(()=>{});
+}
+</script>
+</body>
+</html>

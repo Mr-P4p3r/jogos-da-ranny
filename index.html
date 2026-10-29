@@ -1,0 +1,113 @@
+<!doctype html>
+<!--
+  Jogos da Ranny: menu page of the game collection.
+  Lists every mini-game with its current level and summed level records
+  (read from each game's localStorage keys) and links to it.
+-->
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#2a1450">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Jogos da Ranny">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<title>Jogos da Ranny</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;800&display=swap" rel="stylesheet">
+<style>
+  :root{--bg1:#4a1f86;--bg2:#1a0b38;--ink:#fff;--accent:#ffd23f;--pink:#ff4d8d}
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+  html{background:var(--bg2)}
+  body{min-height:100vh;background:radial-gradient(circle at 50% 0%,var(--bg1),var(--bg2) 70%) fixed;
+    font-family:"Baloo 2",system-ui,sans-serif;color:var(--ink);user-select:none;-webkit-user-select:none}
+  main{max-width:480px;margin:0 auto;padding:calc(22px + env(safe-area-inset-top)) 16px 32px}
+  header{text-align:center;margin-bottom:18px}
+  h1{font-size:42px;line-height:1;font-weight:800;text-shadow:0 3px 0 rgba(0,0,0,.3)}
+  h1 span{color:var(--accent)}
+  .ded{color:#ffb3d1;font-weight:600;font-size:17px;margin-top:4px}
+  .total{display:inline-flex;gap:8px;align-items:center;margin-top:12px;background:rgba(255,255,255,.12);
+    border-radius:999px;padding:6px 16px;font-weight:800;font-size:18px}
+  .total b{color:var(--accent)}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  .card{position:relative;display:flex;flex-direction:column;justify-content:flex-start;min-height:200px;border-radius:24px;
+    padding:14px;color:#fff;text-decoration:none;overflow:hidden;box-shadow:0 6px 0 rgba(0,0,0,.28);
+    transition:transform .1s}
+  .card:active{transform:translateY(4px);box-shadow:0 2px 0 rgba(0,0,0,.28)}
+  .card .ico{text-align:center;font-size:58px;line-height:1.2;margin:2px 0 6px;
+    filter:drop-shadow(0 4px 0 rgba(0,0,0,.2))}
+  .card .ico{animation:bob 3s ease-in-out infinite}
+  .card:nth-child(2n) .ico{animation-delay:-1.5s}
+  @keyframes bob{50%{transform:translateY(-5px) rotate(-4deg)}}
+  .card h2{font-size:21px;line-height:1.05;font-weight:800;text-shadow:0 2px 0 rgba(0,0,0,.25)}
+  .card p{font-size:14px;line-height:1.2;font-weight:600;opacity:.92;margin:2px 0 8px}
+  .stats{display:flex;justify-content:space-between;margin-top:auto;font-size:14px;font-weight:800;
+    background:rgba(0,0,0,.2);border-radius:12px;padding:3px 9px}
+  .new{position:absolute;top:10px;right:10px;background:var(--accent);color:#2a1450;font-size:12px;font-weight:800;
+    border-radius:999px;padding:1px 8px}
+  .bus{background:linear-gradient(160deg,#ff6aa2,#d8246a)}
+  .setas{background:linear-gradient(160deg,#4fc3ff,#2a62e0)}
+  .parafusos{background:linear-gradient(160deg,#ffb347,#e2631c)}
+  .hexa{background:linear-gradient(160deg,#b98bff,#6a35d6)}
+  .trio{background:linear-gradient(160deg,#4ee0a8,#139a6e)}
+  .pixel{background:linear-gradient(160deg,#ff8a7a,#e0403a)}
+  footer{text-align:center;margin-top:22px;opacity:.6;font-size:14px;font-weight:600}
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Jogos da <span>Ranny</span></h1>
+    <div class="ded">Feito com ❤ por Rafael</div>
+    <div class="total">🏆 Total de recordes: <b id="total">0</b></div>
+  </header>
+  <div class="grid" id="grid"></div>
+  <footer>Toque num jogo para jogar 🎉</footer>
+</main>
+<script>
+// Each game stores its level in <prefix>_level and best scores in <prefix>_best ({level: points})
+const GAMES = [
+  {key:'bsp',       path:'bus/',       cls:'bus',       ico:'🚌', name:'Bus Super Party',   tag:'Leve os convidados pra festa'},
+  {key:'setas',     path:'setas/',     cls:'setas',     ico:'➡️', name:'Setas da Festa',    tag:'Tire as setas do caminho'},
+  {key:'parafusos', path:'parafusos/', cls:'parafusos', ico:'🔩', name:'Parafuso Maluco',   tag:'Solte os parafusos por cor'},
+  {key:'hexa',      path:'hexa/',      cls:'hexa',      ico:'🍬', name:'Hexa Doce',         tag:'Empilhe e junte as cores'},
+  {key:'trio',      path:'trio/',      cls:'trio',      ico:'🍓', name:'Trio da Festa',     tag:'Junte três iguais'},
+  {key:'pixel',     path:'pixel/',     cls:'pixel',     ico:'🎨', name:'Pixel Escondido',   tag:'Pinte e descubra o desenho'},
+];
+const fmt = n=>Math.round(n).toLocaleString('pt-BR');
+function read(k){try{return localStorage.getItem(k)}catch(e){return null}}
+
+const grid = document.getElementById('grid');
+// Re-render on pageshow so stats refresh when coming back from a game (bfcache)
+function render(){
+grid.innerHTML = '';
+let total = 0;
+for(const g of GAMES){
+  let best = {};
+  try{ best = JSON.parse(read(g.key+'_best'))||{} }catch(e){}
+  const sum = Object.values(best).reduce((a,b)=>a+(+b||0),0);
+  const level = parseInt(read(g.key+'_level'))||1;
+  total += sum;
+  const a = document.createElement('a');
+  a.className = 'card '+g.cls; a.href = g.path;
+  a.innerHTML = `${sum||level>1?'':'<span class="new">NOVO</span>'}
+    <div class="ico">${g.ico}</div>
+    <h2>${g.name}</h2><p>${g.tag}</p>
+    <div class="stats"><span>Nível ${level}</span><span>🏆 ${fmt(sum)}</span></div>`;
+  grid.appendChild(a);
+}
+document.getElementById('total').textContent = fmt(total);
+}
+addEventListener('pageshow', render);
+
+// Offline support when served over http(s)
+if('serviceWorker' in navigator && location.protocol.startsWith('http')){
+  navigator.serviceWorker.register('sw.js').catch(()=>{});
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,843 @@
+<!doctype html>
+<!--
+  Trio da Festa: a single-file triple tile matching puzzle.
+  Tiles with cute icons are stacked in layers; tap a free (uncovered) tile to send
+  it to the 7-slot tray. Three identical icons in the tray pop and vanish.
+  Clear the whole table to win; a full tray without a trio ends the round.
+  Levels are procedurally generated (seeded) and always winnable.
+-->
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="theme-color" content="#2a1450">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Trio da Festa">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="manifest" href="../manifest.webmanifest">
+<link rel="icon" href="../icons/icon-192.png">
+<link rel="apple-touch-icon" href="../icons/apple-touch-icon.png">
+<title>Trio da Festa</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;800&display=swap" rel="stylesheet">
+<style>
+  :root{--bg1:#4a1f86;--bg2:#1a0b38;--ink:#fff;--accent:#ffd23f;--pink:#ff4d8d}
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+  html,body{height:100%;overflow:hidden;background:radial-gradient(circle at 50% 15%,var(--bg1),var(--bg2) 75%);
+    font-family:"Baloo 2",system-ui,sans-serif;color:var(--ink);touch-action:none;user-select:none;-webkit-user-select:none}
+  #stage{position:absolute;left:0;top:0;width:420px;height:800px;transform-origin:0 0}
+  canvas{position:absolute;left:0;top:0;width:420px;height:800px}
+  #hud{position:absolute;left:0;top:0;width:420px;height:54px;display:flex;align-items:center;gap:8px;padding:8px 12px 0}
+  #info{flex:1;line-height:1;text-shadow:0 2px 0 rgba(0,0,0,.35)}
+  #lvl{font-size:22px;font-weight:800;letter-spacing:.5px}
+  #pts{font-size:15px;font-weight:800;margin-top:3px;white-space:nowrap}
+  #pts b{color:var(--accent)}
+  .btn{border:0;border-radius:14px;font:inherit;font-weight:800;color:#2a1450;background:var(--accent);
+    box-shadow:0 4px 0 #b88a00;cursor:pointer;transition:transform .08s}
+  .btn:active{transform:translateY(3px);box-shadow:0 1px 0 #b88a00}
+  .btn:disabled{opacity:.4}
+  .hb{height:38px;min-width:42px;padding:0 10px;font-size:17px;display:inline-flex;align-items:center;justify-content:center;text-decoration:none}
+  .hb.alt{background:#fff;box-shadow:0 4px 0 #b9a9d6}
+  #boosts{position:absolute;left:0;top:722px;width:420px;height:70px;display:flex;gap:10px;padding:0 14px}
+  .bst{flex:1;height:62px;display:flex;flex-direction:column;align-items:center;justify-content:center;
+    font-size:14px;line-height:1.05;position:relative;background:#fff;box-shadow:0 4px 0 #b9a9d6}
+  .bst:active{box-shadow:0 1px 0 #b9a9d6}
+  .bst i{font-style:normal;font-size:24px;line-height:1.1}
+  .bst b{position:absolute;top:-7px;right:-5px;background:var(--pink);color:#fff;border-radius:11px;min-width:22px;height:22px;
+    font-size:13px;line-height:22px;box-shadow:0 2px 0 #a0244f}
+  .bst:disabled{opacity:.45}
+  .bst:disabled b{background:#9a8fb5;box-shadow:none}
+  #overlay{position:absolute;inset:0;display:none;align-items:center;justify-content:center;
+    background:rgba(20,6,45,.62);backdrop-filter:blur(3px)}
+  #overlay.show{display:flex}
+  .card{width:340px;background:#fff;color:#2a1450;border-radius:26px;padding:26px 22px 22px;text-align:center;
+    box-shadow:0 10px 0 rgba(0,0,0,.25);animation:pop .35s cubic-bezier(.2,1.6,.4,1)}
+  @keyframes pop{from{transform:scale(.6);opacity:0}to{transform:scale(1);opacity:1}}
+  .card h1{font-size:44px;line-height:1;color:var(--pink);margin-bottom:6px}
+  .card h2{font-size:30px;line-height:1.1;margin-bottom:6px}
+  .card p{font-size:17px;line-height:1.3;margin:8px 0;font-weight:600}
+  .card .big{width:100%;height:58px;font-size:24px;margin-top:12px}
+  .card .mid{width:100%;height:50px;font-size:20px;margin-top:10px}
+  .card .sec{background:#efe7ff;box-shadow:0 4px 0 #c9b8ef}
+  .card .ded{color:var(--pink);font-size:18px}
+  .card .emo{font-size:34px;letter-spacing:4px;margin:2px 0 4px}
+  .rows{margin:12px 0 4px;font-size:16px;font-weight:600}
+  .rows div{display:flex;justify-content:space-between;padding:2px 6px}
+  .rows .z{opacity:.4}
+  .total{font-size:34px;font-weight:800;color:var(--pink);line-height:1.1;margin-top:6px}
+  .rec{font-size:18px;font-weight:800}
+  .rec.new{color:#e0a800;animation:pop .5s .3s both cubic-bezier(.2,1.6,.4,1)}
+  .sum{font-size:15px;opacity:.7}
+  #toast{position:absolute;left:50%;top:584px;transform:translateX(-50%);background:#fff;color:#2a1450;
+    font-weight:800;font-size:18px;padding:6px 16px;border-radius:20px;opacity:0;transition:opacity .25s;pointer-events:none;white-space:nowrap;
+    box-shadow:0 4px 0 rgba(0,0,0,.2)}
+  #toast.show{opacity:1}
+</style>
+</head>
+<body>
+<div id="stage">
+  <canvas id="cv"></canvas>
+  <div id="hud">
+    <a class="btn hb alt" id="bBack" href="../" title="Voltar aos jogos">←</a>
+    <div id="info"><div id="lvl">Nível 1</div><div id="pts"></div></div>
+    <button class="btn hb alt" id="bRestart" title="Recomeçar">↻</button>
+    <button class="btn hb alt" id="bMute" title="Som">🔊</button>
+  </div>
+  <div id="boosts">
+    <button class="btn bst" id="bUndo" title="Volta a última peça para a mesa"><i>↩️</i>Desfazer<b>1</b></button>
+    <button class="btn bst" id="bShuf" title="Embaralha as figuras da mesa"><i>🔀</i>Embaralhar<b>1</b></button>
+    <button class="btn bst" id="bBack3" title="Devolve 3 peças da bandeja para a mesa"><i>📤</i>Devolver 3<b>1</b></button>
+  </div>
+  <div id="toast"></div>
+  <div id="overlay"><div class="card" id="card"></div></div>
+</div>
+<script>
+// Optional dedication shown on the start screen (leave empty to hide)
+const DEDICATION = 'Feito com ❤ por Rafael para Ranny';
+
+// Tile icons. Each entry is an emoji OR an image URL/path (e.g. 'fotos/1.jpg');
+// everything is rendered through drawIcon(), so photos can replace these later.
+const ICONS = ['🍓','🍒','🍉','🍋','🍇','🥑','🍩','🧁','🍭','🍬','🌸','🌻','🌷','🎈',
+  '🎁','🦋','🐱','🐶','🐰','⭐','🌙','☀️','🍀','🍄','🍑','🐼','🦄','🍪'];
+
+const VW = 420, VH = 800;
+const cv = document.getElementById('cv'), ctx = cv.getContext('2d');
+const stage = document.getElementById('stage');
+const $ = id => document.getElementById(id);
+
+// GEN-START
+// Seeded RNG so a level is identical on every retry
+function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
+function shuffle(a,rnd){for(let i=a.length-1;i>0;i--){const j=Math.floor(rnd()*(i+1));[a[i],a[j]]=[a[j],a[i]]}return a}
+const TRAY_SIZE = 7;
+
+function levelParams(L,nIcons){
+  const n = Math.min(120, 18 + 3*Math.floor((L-1)*0.9));
+  return {
+    n,
+    layers: Math.min(7, 2 + Math.floor((L-1)/6)),
+    types: Math.min(20, nIcons, n/3, 3 + Math.floor((L-1)*0.45)),
+    mix: L<=2 ? 1 : L<=6 ? 2 : 3,          // how many trios get interleaved in the solution order
+    swaps: L<10 ? 0 : Math.floor(n*0.4),   // extra local swaps (tray-checked)
+  };
+}
+
+// Coordinates are in half-tile units; a tile spans [x,x+2) x [y,y+2).
+// Tile u covers tile t when it sits on a higher layer and overlaps it.
+function covers(u,t){return u.z>t.z && Math.abs(u.x-t.x)<2 && Math.abs(u.y-t.y)<2}
+
+const SHAPES = {
+  rect:()=>true,
+  round:(u,v)=>!(Math.abs(u)>.99&&Math.abs(v)>.99),
+  diamond:(u,v)=>Math.abs(u)+Math.abs(v)<=1.34,
+  oval:(u,v)=>u*u+v*v<=1.45,
+  plus:(u,v)=>Math.abs(u)<.55||Math.abs(v)<.55,
+};
+
+// Mirror-symmetric pyramid: each upper tile rests fully on the layer below
+function buildLayout(bw,bh,shape,layers,offs,fills,rnd){
+  let prev=[];
+  for(let i=0;i<bw;i++) for(let j=0;j<bh;j++){
+    const u=bw>1?2*i/(bw-1)-1:0, v=bh>1?2*j/(bh-1)-1:0;
+    if(SHAPES[shape](u,v)) prev.push({x:2*i,y:2*j,z:0});
+  }
+  const tiles=prev.slice(), mx=2*bw-2;
+  for(let z=1;z<layers&&prev.length;z++){
+    const occ=new Set();
+    prev.forEach(t=>{for(let a=0;a<2;a++)for(let b=0;b<2;b++)occ.add((t.x+a)+','+(t.y+b))});
+    const [ox,oy]=offs[z], groups=new Map();
+    for(let x=ox;x<=mx;x+=2) for(let y=oy;y<=2*bh-2;y+=2){
+      if(!(occ.has(x+','+y)&&occ.has((x+1)+','+y)&&occ.has(x+','+(y+1))&&occ.has((x+1)+','+(y+1)))) continue;
+      const k=Math.min(x,mx-x)+','+y;
+      if(!groups.has(k)) groups.set(k,[]);
+      groups.get(k).push({x,y,z});
+    }
+    const list=[...groups.values()].map(g=>({g,s:Math.abs(g[0].x+1-bw)/bw+Math.abs(g[0].y+1-bh)/bh+rnd()*.5}));
+    list.sort((a,b)=>a.s-b.s);
+    const want=Math.ceil(list.reduce((s,e)=>s+e.g.length,0)*fills[z]), cur=[];
+    for(const e of list){ if(cur.length>=want) break; cur.push(...e.g) }
+    tiles.push(...cur); prev=cur;
+  }
+  return tiles;
+}
+
+// Picks the board size whose pyramid best fits the wanted tile count
+function genLayout(p,rnd,small){
+  const shapes = small ? ['rect','round'] : Object.keys(SHAPES);
+  const shape = shapes[Math.floor(rnd()*shapes.length)];
+  let best=null;
+  for(let variant=0;variant<6;variant++){
+    // Per-layer half offsets (diagonal, horizontal or vertical) and fill ratios
+    const offs=[[0,0]]; let ax=0, ay=0;
+    for(let z=1;z<p.layers;z++){ const r=rnd(); if(r<.34){ax^=1;ay^=1} else if(r<.67) ax^=1; else ay^=1; offs.push([ax,ay]) }
+    const fills=offs.map(()=>variant===5?1:.45+rnd()*.55);
+    const seed=Math.floor(rnd()*1e9);
+    for(let bw=3;bw<=7;bw++) for(let bh=Math.max(3,bw-1);bh<=9&&bh<=Math.ceil(bw*1.7)+1;bh++){
+      const tiles=buildLayout(bw,bh,variant===5?'rect':shape,p.layers,offs,fills,mulberry32(seed+bw*131+bh*17));
+      if(tiles.length<p.n) continue;
+      const cut=trim(tiles,p.n,bw,bh), zs=new Set(cut.map(t=>t.z)).size;
+      // Deep narrow stacks leave too few free tiles, so density is penalized
+      const score=(tiles.length-p.n)*.5+25*(p.layers-zs)+10*Math.abs(bh/bw-1.3)+12*Math.max(0,p.n/(bw*bh)-1.7)+(variant===5?30:0);
+      if(!best||score<best.score) best={score,tiles:cut,bw,bh};
+    }
+  }
+  return best;
+}
+
+// Removes extra tiles from the top layer, keeping symmetry when possible
+function trim(tiles,n,bw,bh){
+  const mx=2*bw-2, dist=t=>Math.abs(t.x+1-bw)+Math.abs(t.y+1-bh);
+  while(tiles.length>n){
+    const top=Math.max(...tiles.map(t=>t.z));
+    const layer=tiles.filter(t=>t.z===top).sort((a,b)=>dist(b)-dist(a));
+    let rm=null;
+    if(tiles.length-n>=2){
+      const t=layer.find(t=>t.x!==mx-t.x), m=t&&layer.find(u=>u.x===mx-t.x&&u.y===t.y);
+      if(m) rm=[t,m];
+    }
+    if(!rm) rm=[layer.find(t=>t.x===mx-t.x)||layer[0]];
+    tiles=tiles.filter(t=>!rm.includes(t));
+  }
+  return tiles;
+}
+
+// Random valid clearing order: always pick a tile nothing covers
+function removalOrder(tiles,rnd){
+  const n=tiles.length, cnt=Array(n).fill(0), below=tiles.map(()=>[]);
+  for(let i=0;i<n;i++) for(let j=0;j<n;j++) if(covers(tiles[j],tiles[i])){ cnt[i]++; below[j].push(i) }
+  const free=[], order=[];
+  for(let i=0;i<n;i++) if(!cnt[i]) free.push(i);
+  while(free.length){
+    const t=free.splice(Math.floor(rnd()*free.length),1)[0];
+    order.push(t);
+    for(const b of below[t]) if(--cnt[b]===0) free.push(b);
+  }
+  return order;
+}
+
+// Highest tray fill (after trios pop) when tiles arrive in this icon sequence
+function trayPeak(start,seq){
+  const c={}; let n=0, peak=0;
+  for(const s of start){ c[s]=(c[s]||0)+1; n++ }
+  peak=n;
+  for(const s of seq){ c[s]=(c[s]||0)+1; n++; if(c[s]===3){c[s]=0; n-=3} if(n>peak) peak=n }
+  return peak;
+}
+function mixChunks(seq,k,rnd){const out=[]; for(let i=0;i<seq.length;i+=3*k) out.push(...shuffle(seq.slice(i,i+3*k),rnd)); return out}
+
+function iconSequence(p,rnd){
+  const nt=p.n/3, types=[];
+  for(let i=0;i<nt;i++) types.push(i%p.types);
+  shuffle(types,rnd);
+  for(let i=1;i<nt;i++) if(types[i]===types[i-1]){
+    const k=types.findIndex((t,j)=>j>i&&t!==types[i-1]);
+    if(k>0) [types[i],types[k]]=[types[k],types[i]];
+  }
+  let seq=[]; types.forEach(t=>seq.push(t,t,t));
+  seq=mixChunks(seq,p.mix,rnd);
+  for(let s=0;s<p.swaps;s++){
+    const i=Math.floor(rnd()*seq.length), j=Math.min(seq.length-1,i+1+Math.floor(rnd()*5));
+    [seq[i],seq[j]]=[seq[j],seq[i]];
+    if(trayPeak([],seq)>=TRAY_SIZE) [seq[i],seq[j]]=[seq[j],seq[i]];
+  }
+  return seq;
+}
+
+// Casual player model used to filter out difficulty spikes: finishes pairs first,
+// then icons with enough visible copies, then tiles that uncover the most
+function botWins(tiles,rnd){
+  const n=tiles.length, cnt=Array(n).fill(0), below=tiles.map(()=>[]), on=Array(n).fill(true), tray={};
+  for(let i=0;i<n;i++) for(let j=0;j<n;j++) if(covers(tiles[j],tiles[i])){ cnt[i]++; below[j].push(i) }
+  let held=0;
+  for(let step=0;step<n;step++){
+    const free=[], vis={};
+    for(let i=0;i<n;i++) if(on[i]&&!cnt[i]){ free.push(i); vis[tiles[i].icon]=(vis[tiles[i].icon]||0)+1 }
+    let bi=-1, bv=-1e9;
+    for(const i of free){
+      const c=tiles[i].icon, h=tray[c]||0;
+      const v=h*10+Math.min(vis[c]+h,3)*3+below[i].length*.4+rnd();
+      if(v>bv){bv=v; bi=i}
+    }
+    on[bi]=false; for(const b of below[bi]) cnt[b]--;
+    const c=tiles[bi].icon; tray[c]=(tray[c]||0)+1; held++;
+    if(tray[c]===3){ tray[c]=0; held-=3 }
+    if(held>=TRAY_SIZE) return false;
+  }
+  return true;
+}
+
+// Icons follow the clearing order, so playing that order never fills the tray
+function genLevel(L,nIcons){
+  const p=levelParams(L,nIcons), need=L<=25?3:2;
+  let best=null;
+  for(let attempt=0;attempt<6;attempt++){
+    const rnd=mulberry32(L*7919+101+attempt*104729);
+    const lay=genLayout(p,rnd,L<=4);
+    const tiles=lay.tiles.map(t=>({...t}));
+    const order=removalOrder(tiles,rnd);
+    const seq=iconSequence(p,rnd);
+    const pool=shuffle([...Array(nIcons).keys()],rnd).slice(0,p.types);
+    order.forEach((ti,k)=>tiles[ti].icon=pool[seq[k]]);
+    let wins=0; for(let k=0;k<4;k++) if(botWins(tiles,mulberry32(L*31+k))) wins++;
+    if(!best||wins>best.wins) best={p,tiles,order,w:2*lay.bw,h:2*lay.bh,wins};
+    if(wins>=need) break;
+  }
+  return best;
+}
+
+// Shuffle booster: reassigns the same icons so the rest stays winnable with the current tray
+function reshuffle(tiles,trayIcons,rnd){
+  const order=removalOrder(tiles,rnd), cnt={}, tc={};
+  tiles.forEach(t=>cnt[t.icon]=(cnt[t.icon]||0)+1);
+  trayIcons.forEach(i=>tc[i]=(tc[i]||0)+1);
+  const needs=[];
+  for(const k of Object.keys(tc).sort((a,b)=>tc[b]-tc[a])){
+    const need=(3-tc[k]%3)%3;
+    for(let i=0;i<need;i++){ needs.push(+k); cnt[k]=(cnt[k]||0)-1 }
+  }
+  const trios=[];
+  for(const k in cnt){ if(cnt[k]<0||cnt[k]%3) return null; for(let i=0;i<cnt[k]/3;i++) trios.push(+k) }
+  shuffle(trios,rnd);
+  const rest=[]; trios.forEach(t=>rest.push(t,t,t));
+  const seq=needs.concat(mixChunks(rest,2,rnd));
+  if(trayPeak(trayIcons,seq)>=TRAY_SIZE) return null;
+  const icons=Array(tiles.length);
+  order.forEach((ti,k)=>icons[ti]=seq[k]);
+  return icons;
+}
+// GEN-END
+
+// Soft pastel tile edges, one per layer
+const EDGES = ['#ffb3c9','#9fe3cf','#c6b5ff','#ffd29e','#9fd3ff','#f7b0e6','#cdea94','#ffc2a8'];
+const SPARK = ['#ffd23f','#ff4d8d','#9fe3cf','#c6b5ff','#9fd3ff','#ffb3c9','#fff'];
+
+// ---------- Layout ----------
+const BOARD = {x:8, y:60, w:404, h:552};
+const TRAY = {x:12, y:636, w:396, h:76};
+const PITCH = 53, TS = 45;           // tray slot spacing / tray tile size
+const LDX = -2, LDY = -4;            // pixel shift per layer
+let C=52, F=48, bx=0, by=0;          // cell size, tile face size, board origin
+const depth = s=>Math.round(s*.12);
+function tileXY(t){return [bx+t.x*C/2+2+t.z*LDX, by+t.y*C/2+2+t.z*LDY]}
+function slotX(i,n){return n<=TRAY_SIZE ? VW/2+(i-3)*PITCH : VW/2+(i-(n-1)/2)*(PITCH*TRAY_SIZE/n)}
+const trayTop = ()=>TRAY.y+(TRAY.h-TS-depth(TS))/2+1;
+
+// ---------- Audio ----------
+let AC=null, muted=false;
+try{ muted = localStorage.getItem('bsp_muted')==='1' }catch(e){}
+function tone(f,dur,type='sine',vol=.12,slide=0,delay=0){
+  if(muted) return;
+  try{
+    if(!AC) AC = new (window.AudioContext||window.webkitAudioContext)();
+    const t = AC.currentTime+delay, o=AC.createOscillator(), g=AC.createGain();
+    o.type=type; o.frequency.setValueAtTime(f,t);
+    if(slide) o.frequency.exponentialRampToValueAtTime(f*slide,t+dur);
+    g.gain.setValueAtTime(vol,t); g.gain.exponentialRampToValueAtTime(.0001,t+dur);
+    o.connect(g).connect(AC.destination); o.start(t); o.stop(t+dur+.02);
+  }catch(e){}
+}
+const sfx = {
+  tap(){tone(620,.09,'triangle',.11,1.5)},
+  land(){tone(980,.05,'sine',.06,.8)},
+  pop(c){const b=523*Math.pow(1.122,c-1);[b,b*1.26,b*1.5].forEach((f,i)=>tone(f,.16,'triangle',.1,1.02,i*.05)); tone(b*2,.25,'sine',.05,1,.15)},
+  no(){tone(220,.18,'sawtooth',.05,.7); buzz([15,30,15])},
+  undo(){tone(700,.18,'sine',.09,.55)},
+  shuffle(){[660,550,740,620,880].forEach((f,i)=>tone(f,.08,'triangle',.08,0,i*.05))},
+  back(){[440,550,660].forEach((f,i)=>tone(f,.1,'sine',.09,1.2,i*.06))},
+  win(){[523,659,784,1047,784,1047].forEach((f,i)=>tone(f,.2,'triangle',.11,0,i*.1))},
+  lose(){[392,330,262].forEach((f,i)=>tone(f,.25,'triangle',.1,0,i*.14))},
+};
+function buzz(p){try{navigator.vibrate&&navigator.vibrate(p)}catch(e){}}
+
+// ---------- Sprites & icons ----------
+let SC=1; // canvas pixels per logical pixel
+const spriteCache=new Map(), iconCache=[];
+function rrp(g,x,y,w,h,r){g.beginPath();g.moveTo(x+r,y);g.arcTo(x+w,y,x+w,y+h,r);g.arcTo(x+w,y+h,x,y+h,r);g.arcTo(x,y+h,x,y,r);g.arcTo(x,y,x+w,y,r);g.closePath()}
+function rr(x,y,w,h,r){rrp(ctx,x,y,w,h,r)}
+function circle(x,y,r){ctx.beginPath();ctx.arc(x,y,r,0,Math.PI*2)}
+
+// Pre-rendered ivory tile with pastel 3D edge and soft shadow
+function tileSprite(size,edge){
+  const key=size+'|'+edge;
+  let c=spriteCache.get(key); if(c) return c;
+  const d=depth(size), pad=6, r=size*.22;
+  c=document.createElement('canvas');
+  c.width=Math.ceil((size+pad*2)*SC); c.height=Math.ceil((size+d+pad*2)*SC);
+  const g=c.getContext('2d'); g.scale(SC,SC); g.translate(pad,pad);
+  g.fillStyle='rgba(25,6,55,.32)'; rrp(g,1.5,d+2.5,size,size,r); g.fill();
+  g.fillStyle=edge; rrp(g,0,d,size,size,r); g.fill();
+  g.fillStyle='rgba(0,0,0,.12)'; rrp(g,0,d+size*.5,size,size*.5,r); g.fill();
+  const gr=g.createLinearGradient(0,0,0,size);
+  gr.addColorStop(0,'#fffef9'); gr.addColorStop(.6,'#fff7ea'); gr.addColorStop(1,'#f6e7d2');
+  g.fillStyle=gr; rrp(g,0,0,size,size,r); g.fill();
+  g.strokeStyle='rgba(255,255,255,.95)'; g.lineWidth=1.6; rrp(g,1.6,1.6,size-3.2,size-3.2,r*.85); g.stroke();
+  g.strokeStyle='rgba(140,90,70,.16)'; g.lineWidth=1; rrp(g,.5,.5,size-1,size-1,r); g.stroke();
+  c.pad=pad; c.lw=size+pad*2; c.lh=size+d+pad*2;
+  spriteCache.set(key,c); return c;
+}
+
+const isUrl = s=>/^(https?:|data:|\.{0,2}\/)|\.(png|jpe?g|webp|gif|svg)$/i.test(s);
+const IR = 72; // icon cache resolution (logical px)
+function iconImg(i){
+  if(iconCache[i]) return iconCache[i];
+  const src=ICONS[i], c=document.createElement('canvas');
+  c.width=c.height=Math.ceil(IR*SC);
+  const g=c.getContext('2d'); g.scale(SC,SC);
+  if(isUrl(src)){
+    // Photo icon: cover-cropped into a rounded square
+    const im=new Image();
+    im.onload=()=>{ const s=Math.min(im.width,im.height); g.save(); rrp(g,2,2,IR-4,IR-4,IR*.2); g.clip();
+      g.drawImage(im,(im.width-s)/2,(im.height-s)/2,s,s,2,2,IR-4,IR-4); g.restore() };
+    im.src=src;
+  }else{
+    g.font=`${IR*.8}px "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif`;
+    g.textAlign='center'; g.textBaseline='middle';
+    g.fillText(src,IR/2,IR*.54);
+  }
+  iconCache[i]=c; return c;
+}
+// Single entry point for drawing a tile icon centered at (cx,cy)
+function drawIcon(i,cx,cy,size){ ctx.drawImage(iconImg(i),cx-size/2,cy-size/2,size,size) }
+
+// Draws a tile whose face top-left is (x,y); o: {s scale, sx squash, a alpha, lit 0..1, icon}
+function drawTile(x,y,size,edge,o){
+  const base=size>TS+1?F:TS, k=size/base, lit=o.lit??1, s=(o.s??1);
+  ctx.save();
+  ctx.translate(x+size/2,y+size/2); ctx.scale((o.sx??1)*s,s); ctx.translate(-size/2,-size/2);
+  const a=o.a??1, lt=tileSprite(base,edge);
+  ctx.globalAlpha=a; ctx.drawImage(lt,-lt.pad*k,-lt.pad*k,lt.lw*k,lt.lh*k);
+  if(o.icon!=null) drawIcon(o.icon,size/2,size*.5,size*.74);
+  // Covered tiles sit in shadow
+  if(lit<.99){ ctx.globalAlpha=a*(1-lit); rr(0,0,size,size+depth(size),size*.22); ctx.fillStyle='rgba(48,20,86,.5)'; ctx.fill() }
+  ctx.restore();
+}
+
+// ---------- State ----------
+let S = null, playing = false;
+let saved = 1;
+try{ saved = Math.max(1, parseInt(localStorage.getItem('trio_level'))||1) }catch(e){}
+// Best score per level: {level: points}
+let best = {};
+try{ best = JSON.parse(localStorage.getItem('trio_best'))||{} }catch(e){}
+const fmt = n=>Math.round(n).toLocaleString('pt-BR');
+const totalBest = ()=>Object.values(best).reduce((a,b)=>a+b,0);
+function renderPts(){
+  $('pts').innerHTML = `⭐ <b>${fmt(S.shown)}</b> &nbsp;🏆 ${fmt(best[S.level]||0)}`;
+}
+
+// Scoring
+const PTS = {trio:30, comboWindow:4, maxCombo:5, comboStep:.5, boost:50, timeStep:3, parPerTile:1.6};
+
+function startLevel(L){
+  const g = genLevel(L, ICONS.length);
+  const layers = Math.max(...g.tiles.map(t=>t.z))+1, wT=g.w/2, hT=g.h/2;
+  C = Math.min(56, (BOARD.w-12-(layers-1)*2)/wT, (BOARD.h-22-(layers-1)*4)/hT);
+  F = Math.round(C-4);
+  const pw=wT*C+(layers-1)*2, ph=hT*C+(layers-1)*4+depth(F);
+  bx = BOARD.x+(BOARD.w-pw)/2+(layers-1)*2;
+  by = BOARD.y+(BOARD.h-ph)/2+(layers-1)*4;
+  const tiles = g.tiles.map((t,id)=>({...t, id, state:'board', free:false, lit:0, shake:0,
+    intro:t.z*.12+Math.random()*.25, ret:null, flip:null, fly:null, vx:0, dead:false}));
+  S = {
+    level:L, p:g.p, w:g.w, h:g.h, tiles, order:g.order, draw:[], tray:[], groups:[],
+    parts:[], rings:[], floats:[], used:{undo:false,shuf:false,back:false}, last:null,
+    over:false, overKind:'', endT:0, time:0, playT:0, taps:0, trios:0,
+    score:0, shown:0, pts:{trios:0,combo:0}, combo:0, lastTrio:-99,
+  };
+  sortDraw(); refreshFree();
+  $('lvl').textContent = 'Nível '+L;
+  renderPts(); syncBoosts();
+}
+
+function sortDraw(){ S.draw = S.tiles.slice().sort((a,b)=>a.z-b.z||a.y-b.y||a.x-b.x) }
+const boardTiles = ()=>S.tiles.filter(t=>t.state==='board');
+const trayLive = ()=>S.tray.filter(t=>!t.dead);
+function refreshFree(){
+  const b=boardTiles();
+  for(const t of b) t.free=!b.some(u=>covers(u,t));
+}
+
+function tapTile(t){
+  if(S.over||!t.free||t.state!=='board'||trayLive().length>=TRAY_SIZE) return false;
+  S.taps++;
+  const [x,y]=tileXY(t);
+  t.state='tray'; t.fly={x0:x,y0:y,s0:F,t:0}; t.ret=null; t.flip=null;
+  let idx=S.tray.length;
+  for(let i=S.tray.length-1;i>=0;i--) if(!S.tray[i].dead&&S.tray[i].icon===t.icon){ idx=i+1; break }
+  S.tray.splice(idx,0,t);
+  const same=trayLive().filter(u=>u.icon===t.icon);
+  if(same.length===3){ same.forEach(u=>u.dead=true); S.groups.push({tiles:same,t:-1}) }
+  S.last=t;
+  refreshFree(); sfx.tap(); buzz(8);
+  return true;
+}
+
+// ---------- Boosters ----------
+function syncBoosts(){
+  for(const [k,id] of [['undo','bUndo'],['shuf','bShuf'],['back','bBack3']]){
+    $(id).disabled=S.used[k]; $(id).querySelector('b').textContent=S.used[k]?'0':'1';
+  }
+}
+function canUndo(){return S.last && S.last.state==='tray' && !S.last.dead}
+function boostUndo(){
+  if(S.used.undo) return false;
+  if(!canUndo()){ toast('Nada para desfazer'); return false }
+  const t=S.last, i=S.tray.indexOf(t);
+  S.tray.splice(i,1);
+  putBack(t, t.fly ? flyPos(t,i) : [t.vx-TS/2, trayTop(), TS]);
+  S.last=null; S.used.undo=true; sfx.undo(); afterBoost();
+  return true;
+}
+function boostShuffle(){
+  if(S.used.shuf) return false;
+  const b=boardTiles();
+  if(b.length<2){ toast('Poucas peças na mesa'); return false }
+  let icons=reshuffle(b.map(t=>({x:t.x,y:t.y,z:t.z,icon:t.icon})), trayLive().map(t=>t.icon), Math.random);
+  if(!icons) icons=shuffle(b.map(t=>t.icon),Math.random);
+  b.forEach((t,i)=>{ t.flip={t:0,old:t.icon,d:Math.random()*.15}; t.icon=icons[i] });
+  S.used.shuf=true; sfx.shuffle(); afterBoost();
+  return true;
+}
+function boostBack(){
+  if(S.used.back) return false;
+  const pick=S.tray.filter(t=>!t.dead&&!t.fly).slice(0,3);
+  if(!pick.length){ toast('A bandeja está vazia'); return false }
+  const spots=returnSpots(pick.length);
+  pick.forEach((t,k)=>{
+    const from=[t.vx-TS/2, trayTop(), TS];
+    S.tray.splice(S.tray.indexOf(t),1);
+    Object.assign(t,spots[k]);
+    putBack(t,from);
+    t.ret.d=k*.06;
+  });
+  if(pick.includes(S.last)) S.last=null;
+  S.used.back=true; sfx.back(); afterBoost();
+  return true;
+}
+// Row of free spots on a new top layer, covering as few tiles as possible
+function returnSpots(k){
+  const b=boardTiles(), top=b.length?Math.max(...b.map(t=>t.z))+1:0;
+  let bestS=null, bestV=1e9;
+  for(let y=0;y<=S.h-2;y++) for(let x0=0;x0<=S.w-2*k;x0++){
+    const spots=Array.from({length:k},(_,i)=>({x:x0+2*i,y,z:top}));
+    const v=b.filter(t=>spots.some(s=>covers(s,t))).length*10+Math.abs(x0+k-S.w/2)+Math.abs(y+1-S.h*.85)*.6;
+    if(v<bestV){bestV=v; bestS=spots}
+  }
+  return bestS;
+}
+function putBack(t,[x,y,s]){
+  t.state='board'; t.fly=null; t.dead=false; t.lit=1; t.ret={x0:x,y0:y,s0:s,t:0,d:0};
+  sortDraw(); refreshFree();
+}
+function afterBoost(){
+  syncBoosts();
+  if(S.over && S.overKind==='lose'){ S.over=false; S.endT=0; hideOverlay() }
+}
+
+// ---------- Update ----------
+const ease = t=>t<.5?2*t*t:1-Math.pow(-2*t+2,2)/2;
+const easeOut = t=>1-Math.pow(1-t,3);
+const backOut = t=>{const c=1.7; return 1+(c+1)*Math.pow(t-1,3)+c*Math.pow(t-1,2)};
+
+function flyPos(t,i){
+  const e=easeOut(Math.min(1,t.fly.t)), tx=slotX(i,S.tray.length)-TS/2, ty=trayTop();
+  const s=t.fly.s0+(TS-t.fly.s0)*e;
+  return [t.fly.x0+(tx-t.fly.x0)*e, t.fly.y0+(ty-t.fly.y0)*e-Math.sin(Math.min(1,t.fly.t)*Math.PI)*55, s];
+}
+
+function sparkle(x,y,n,spread=1){
+  for(let i=0;i<n;i++){
+    const a=Math.random()*Math.PI*2, s=(80+Math.random()*220)*spread;
+    S.parts.push({x,y,vx:Math.cos(a)*s,vy:Math.sin(a)*s-120,r:Math.random()*6,vr:(Math.random()-.5)*10,
+      c:SPARK[Math.floor(Math.random()*SPARK.length)],life:.7+Math.random()*.5,star:Math.random()<.45,g:380});
+  }
+}
+function confetti(x,y,n){
+  for(let i=0;i<n;i++){
+    const a=Math.random()*Math.PI*2, s=120+Math.random()*260;
+    S.parts.push({x,y,vx:Math.cos(a)*s,vy:Math.sin(a)*s-160,r:Math.random()*6,vr:(Math.random()-.5)*12,
+      c:SPARK[Math.floor(Math.random()*SPARK.length)],life:1+Math.random()*.6,star:false,g:520});
+  }
+}
+
+function update(dt){
+  S.time+=dt;
+  const k12=1-Math.exp(-12*dt);
+  for(const t of S.tiles){
+    if(t.state!=='board') continue;
+    t.lit+=((t.free?1:0)-t.lit)*k12;
+    if(t.shake>0) t.shake=Math.max(0,t.shake-dt);
+    if(t.ret){ if(t.ret.d>0) t.ret.d-=dt; else{ t.ret.t+=dt/.38; if(t.ret.t>=1) t.ret=null } }
+    if(t.flip){ if(t.flip.d>0) t.flip.d-=dt; else{ t.flip.t+=dt/.42; if(t.flip.t>=1) t.flip=null } }
+  }
+  const n=S.tray.length;
+  S.tray.forEach((t,i)=>{
+    const tx=slotX(i,n);
+    if(t.fly){
+      t.fly.t+=dt/.3;
+      if(t.fly.t>=1){ t.fly=null; t.vx=tx; t.squash=1; if(!t.dead) sfx.land() }
+    }else t.vx+=(tx-t.vx)*(1-Math.exp(-16*dt));
+    if(t.squash>0) t.squash=Math.max(0,t.squash-dt*5);
+  });
+
+  // Trio pops once all three tiles have landed
+  for(let i=S.groups.length-1;i>=0;i--){
+    const g=S.groups[i];
+    if(g.t<0){ if(g.tiles.every(u=>!u.fly)){ g.t=0; g.cx=g.tiles[1].vx } continue }
+    g.t+=dt;
+    if(!g.scored && g.t>=.16){
+      g.scored=true; S.trios++;
+      S.combo = S.time-S.lastTrio<=PTS.comboWindow ? Math.min(PTS.maxCombo,S.combo+1) : 1;
+      S.lastTrio=S.time;
+      const gain=Math.round(PTS.trio*(1+(S.combo-1)*PTS.comboStep));
+      S.score+=gain; S.pts.trios+=PTS.trio; S.pts.combo+=gain-PTS.trio;
+      const y=trayTop()+TS/2;
+      S.floats.push({x:g.cx,y:y-40,text:'+'+gain+(S.combo>1?'  Combo x'+S.combo+'!':''),life:1.2,combo:S.combo>1});
+      sparkle(g.cx,y,26); S.rings.push({x:g.cx,y,t:0});
+      sfx.pop(S.combo); buzz(18);
+    }
+    if(g.t>=.36){
+      g.tiles.forEach(u=>{ u.state='gone'; S.tray.splice(S.tray.indexOf(u),1) });
+      S.groups.splice(i,1);
+    }
+  }
+
+  for(let i=S.parts.length-1;i>=0;i--){
+    const p=S.parts[i]; p.vy+=p.g*dt; p.vx*=.985; p.x+=p.vx*dt; p.y+=p.vy*dt; p.r+=p.vr*dt; p.life-=dt;
+    if(p.life<=0) S.parts.splice(i,1);
+  }
+  for(let i=S.rings.length-1;i>=0;i--){ S.rings[i].t+=dt/.4; if(S.rings[i].t>=1) S.rings.splice(i,1) }
+  for(let i=S.floats.length-1;i>=0;i--){
+    const f=S.floats[i]; f.y-=40*dt; f.life-=dt;
+    if(f.life<=0) S.floats.splice(i,1);
+  }
+  if(S.shown<S.score){ S.shown=Math.min(S.score,S.shown+Math.max(1,Math.ceil((S.score-S.shown)*.15))); renderPts(); }
+
+  if(S.over||!playing) return;
+  S.playT+=dt;
+  const landing=S.tray.some(t=>t.fly);
+  const won=!boardTiles().length && !S.tray.length;
+  const full=!landing && trayLive().length>=TRAY_SIZE;
+  if(won||full){ S.endT+=dt; if(S.endT>(won?.5:.45)) won?onWin():onLose(); }
+  else S.endT=0;
+}
+
+// ---------- Drawing ----------
+// Static bokeh dots behind everything
+const BOKEH = Array.from({length:18},(_,i)=>{const r=mulberry32(i*31+7); return {x:r()*VW,y:60+r()*560,r:6+r()*26,c:SPARK[i%SPARK.length]}});
+
+function drawBoardTile(t){
+  let [x,y]=tileXY(t), s=F, sc=1, a=1, sx=1;
+  if(t.shake>0) x+=Math.sin(S.time*70)*3*(t.shake/.3);
+  const it=(S.time-t.intro)/.4;
+  if(it<1){ if(it<=0) return; const e=backOut(it); y-=(1-e)*40; a=Math.min(1,it*2.5) }
+  if(t.ret){
+    const e=ease(Math.min(1,t.ret.t)), r=t.ret;
+    x=r.x0+(x-r.x0)*e; y=r.y0+(y-r.y0)*e-Math.sin(e*Math.PI)*50; s=r.s0+(F-r.s0)*e;
+  }
+  let icon=t.icon;
+  if(t.flip){ sx=Math.max(.04,Math.abs(Math.cos(t.flip.t*Math.PI))); if(t.flip.t<.5) icon=t.flip.old }
+  drawTile(x,y,s,EDGES[t.z%EDGES.length],{lit:t.lit,a,s:sc,sx,icon});
+}
+
+function draw(){
+  ctx.clearRect(0,0,VW,VH);
+  for(const b of BOKEH){ circle(b.x,b.y,b.r); ctx.fillStyle=b.c; ctx.globalAlpha=.06; ctx.fill() }
+  ctx.globalAlpha=1;
+
+  // Party table
+  rr(BOARD.x,BOARD.y+2,BOARD.w,BOARD.h-6,28);
+  ctx.fillStyle='rgba(255,255,255,.07)'; ctx.fill();
+  ctx.setLineDash([2,9]); ctx.lineCap='round'; ctx.lineWidth=3; ctx.strokeStyle='rgba(255,255,255,.16)'; ctx.stroke(); ctx.setLineDash([]);
+
+  for(const t of S.draw) if(t.state==='board') drawBoardTile(t);
+
+  // Tutorial pulse on the first level: next tile of a known solution
+  if(S.level===1 && !S.trios && playing && !S.over){
+    const id=S.order.find(i=>S.tiles[i].state==='board');
+    const t=id!=null&&S.tiles[id];
+    if(t&&t.free&&!t.ret){ const [x,y]=tileXY(t), p=1+Math.sin(S.time*5)*.08;
+      rr(x+F/2-F*.62*p,y+F/2-F*.62*p,F*1.24*p,F*1.24*p,F*.3); ctx.lineWidth=4; ctx.strokeStyle='rgba(255,210,63,.95)'; ctx.stroke() }
+  }
+
+  drawTray();
+
+  for(const p of S.parts){
+    ctx.save(); ctx.translate(p.x,p.y); ctx.rotate(p.r); ctx.globalAlpha=Math.min(1,p.life*2); ctx.fillStyle=p.c;
+    if(p.star){ ctx.beginPath(); for(let i=0;i<10;i++){const a=i*Math.PI/5, k=i%2?2.4:6; ctx.lineTo(Math.cos(a)*k,Math.sin(a)*k)} ctx.closePath(); ctx.fill() }
+    else ctx.fillRect(-4,-2.5,8,5);
+    ctx.restore();
+  }
+  for(const r of S.rings){
+    circle(r.x,r.y,20+easeOut(r.t)*46); ctx.globalAlpha=1-r.t; ctx.lineWidth=5*(1-r.t)+1; ctx.strokeStyle='#fff'; ctx.stroke();
+  }
+  ctx.globalAlpha=1;
+
+  ctx.textAlign='center'; ctx.lineJoin='round';
+  for(const f of S.floats){
+    ctx.globalAlpha=Math.min(1,f.life*2.5);
+    ctx.font=`800 ${f.combo?22:19}px "Baloo 2",sans-serif`;
+    const x=Math.max(90,Math.min(VW-90,f.x));
+    ctx.lineWidth=5; ctx.strokeStyle='#2a1450'; ctx.strokeText(f.text,x,f.y);
+    ctx.fillStyle=f.combo?'#ffd23f':'#fff'; ctx.fillText(f.text,x,f.y);
+  }
+  ctx.globalAlpha=1;
+}
+
+function drawTray(){
+  const live=trayLive().length, warn=live>=5?(live-4)/2:0;
+  ctx.font='800 15px "Baloo 2",sans-serif'; ctx.fillStyle='rgba(255,255,255,.85)';
+  ctx.textAlign='left'; ctx.fillText('Peças: '+boardTiles().length,TRAY.x+8,TRAY.y-7);
+  ctx.textAlign='right'; ctx.fillStyle=warn?'#ffb3c9':'rgba(255,255,255,.85)';
+  ctx.fillText((warn?'Cuidado! ':'')+'Bandeja '+live+'/'+TRAY_SIZE,TRAY.x+TRAY.w-8,TRAY.y-7);
+
+  // Cute tray: pink rim, cream inside, soft slot wells
+  rr(TRAY.x,TRAY.y+5,TRAY.w,TRAY.h,24); ctx.fillStyle='rgba(25,6,55,.35)'; ctx.fill();
+  rr(TRAY.x,TRAY.y,TRAY.w,TRAY.h,24); ctx.fillStyle='#ff8fb3'; ctx.fill();
+  if(warn){ ctx.lineWidth=4; ctx.strokeStyle=`rgba(255,60,90,${(.4+.4*Math.sin(S.time*9))*warn})`; ctx.stroke() }
+  rr(TRAY.x+6,TRAY.y+6,TRAY.w-12,TRAY.h-12,19); ctx.fillStyle='#fff3f7'; ctx.fill();
+  const wy=trayTop();
+  for(let i=0;i<TRAY_SIZE;i++){
+    rr(slotX(i,TRAY_SIZE)-TS/2-1,wy+1,TS+2,TS+depth(TS)-1,11); ctx.fillStyle='#ffe0ea'; ctx.fill();
+  }
+
+  // Tray tiles (flying ones last so they pass over everything)
+  const n=S.tray.length, flying=[];
+  S.tray.forEach((t,i)=>{
+    if(t.fly){ flying.push([t,i]); return }
+    let x=t.vx-TS/2, y=wy, s=1, a=1;
+    const g=t.dead&&S.groups.find(g=>g.tiles.includes(t));
+    if(g&&g.t>=0){
+      const m=Math.min(1,g.t/.16); x+=(g.cx-t.vx)*easeOut(m);
+      if(g.t>.16){ const q=(g.t-.16)/.2; s=1+q*.5; a=Math.max(0,1-q) } else s=1+m*.1;
+    }
+    const sq=t.squash>0?Math.sin(t.squash*Math.PI)*.12:0;
+    drawTile(x,y,TS,'#ffb3c9',{icon:t.icon,s:s,sx:1+sq,a});
+  });
+  for(const [t,i] of flying){
+    const [x,y,s]=flyPos(t,i), bump=1+Math.sin(Math.min(1,t.fly.t)*Math.PI)*.15;
+    drawTile(x,y,s,'#ffb3c9',{icon:t.icon,s:bump});
+  }
+}
+
+// ---------- Screens ----------
+function showOverlay(html){$('card').innerHTML=html; $('overlay').classList.add('show')}
+function hideOverlay(){$('overlay').classList.remove('show')}
+let toastT=0;
+function toast(msg){const t=$('toast'); t.textContent=msg; t.classList.add('show'); clearTimeout(toastT); toastT=setTimeout(()=>t.classList.remove('show'),1300)}
+
+function begin(L){ hideOverlay(); startLevel(L); playing=true }
+
+function startScreen(){
+  playing=false;
+  showOverlay(`
+    <h1>Trio da<br>Festa</h1>
+    <div class="emo">🧁🧁🧁</div>
+    ${DEDICATION?`<p class="ded">${DEDICATION}</p>`:''}
+    <p>Toque nas peças livres (as mais claras) para levá-las à bandeja.</p>
+    <p>Junte 3 figuras iguais e elas estouram!</p>
+    <p>Limpe a mesa sem lotar os 7 lugares da bandeja.</p>
+    ${totalBest()?`<p class="rec">🏆 Total de recordes: ${fmt(totalBest())}</p>`:''}
+    <button class="btn big" id="oPlay">Jogar · Nível ${saved}</button>`);
+  $('oPlay').onclick=()=>begin(saved);
+}
+
+function onWin(){
+  S.over=true; S.overKind='win';
+  saved=S.level+1; try{localStorage.setItem('trio_level',saved)}catch(e){}
+  confetti(VW/2,320,130); sfx.win(); buzz([30,60,30]);
+  // End-of-level bonuses
+  const unused=['undo','shuf','back'].filter(k=>!S.used[k]).length;
+  const speed=Math.max(0,Math.round(S.p.n*PTS.parPerTile-S.playT))*PTS.timeStep;
+  const helps=unused*PTS.boost;
+  S.score+=speed+helps;
+  const prev=best[S.level]||0, isRecord=S.score>prev;
+  if(isRecord){ best[S.level]=S.score; try{localStorage.setItem('trio_best',JSON.stringify(best))}catch(e){} }
+  const row=(label,v)=>`<div class="${v?'':'z'}"><span>${label}</span><span>+${fmt(v)}</span></div>`;
+  setTimeout(()=>{
+    const msgs=['Trio perfeito!','Arrasou, Ranny!','Que festa!','Mesa limpinha!','Mandou bem, Ranny!','Brilhou!'];
+    showOverlay(`<h2>${msgs[S.level%msgs.length]} 🎉</h2><p>Nível ${S.level} concluído</p>
+      <div class="rows">
+        ${row('Trios ('+S.trios+')',S.pts.trios)}${row('Combos',S.pts.combo)}
+        ${row('Rapidez',speed)}${row('Ajudas guardadas ('+unused+')',helps)}
+      </div>
+      <div class="total">${fmt(S.score)} pontos</div>
+      ${isRecord?`<div class="rec new">🏆 Novo recorde!${prev?` (antes: ${fmt(prev)})`:''}</div>`
+                :`<div class="rec">🏆 Recorde: ${fmt(prev)}</div>`}
+      <div class="sum">Total de todos os níveis: ${fmt(totalBest())}</div>
+      <button class="btn big" id="oNext">Próximo nível</button>
+      <button class="btn big sec" id="oAgain">Jogar de novo</button>`);
+    $('oAgain').onclick=()=>begin(S.level);
+    $('oNext').onclick=()=>begin(saved);
+  },500);
+}
+
+function onLose(){
+  S.over=true; S.overKind='lose'; sfx.lose(); buzz([20,40,20]);
+  const u=!S.used.undo&&canUndo(), b=!S.used.back;
+  showOverlay(`<h2>Bandeja cheia! 😵</h2><p>Não sobrou lugar para formar um trio.</p>
+    ${u||b?'<p>Use uma ajuda para continuar:</p>':''}
+    ${u?'<button class="btn mid" id="oUndo">↩️ Desfazer e continuar</button>':''}
+    ${b?'<button class="btn mid" id="oBack">📤 Devolver 3 e continuar</button>':''}
+    <button class="btn big sec" id="oRetry">Tentar de novo</button>`);
+  if(u) $('oUndo').onclick=boostUndo;
+  if(b) $('oBack').onclick=boostBack;
+  $('oRetry').onclick=()=>begin(S.level);
+}
+
+// ---------- Input & loop ----------
+function tileAt(px,py){
+  for(let i=S.draw.length-1;i>=0;i--){
+    const t=S.draw[i]; if(t.state!=='board') continue;
+    const [x,y]=tileXY(t);
+    if(px>=x&&px<=x+F&&py>=y&&py<=y+F+depth(F)) return t;
+  }
+  return null;
+}
+cv.addEventListener('pointerdown',e=>{
+  if(!S||S.over||!playing) return;
+  const r=cv.getBoundingClientRect();
+  const px=(e.clientX-r.left)/r.width*VW, py=(e.clientY-r.top)/r.height*VH;
+  const t=tileAt(px,py);
+  if(!t) return;
+  if(!t.free){ t.shake=.3; sfx.no(); return }
+  if(trayLive().length>=TRAY_SIZE) return;
+  tapTile(t);
+});
+function boostBtn(f){ return ()=>{ if(S&&playing&&!S.over) f() } }
+$('bUndo').onclick=boostBtn(boostUndo);
+$('bShuf').onclick=boostBtn(boostShuffle);
+$('bBack3').onclick=boostBtn(boostBack);
+$('bRestart').onclick=()=>{ if(S&&playing) begin(S.level) };
+function syncMute(){$('bMute').textContent=muted?'🔇':'🔊'}
+$('bMute').onclick=()=>{muted=!muted; syncMute(); try{localStorage.setItem('bsp_muted',muted?'1':'0')}catch(e){}};
+syncMute();
+
+function fit(){
+  const vw=innerWidth, vh=innerHeight, s=Math.min(vw/VW,vh/VH);
+  stage.style.transform=`translate(${(vw-VW*s)/2}px,${(vh-VH*s)/2}px) scale(${s})`;
+  const dpr=Math.min(window.devicePixelRatio||1,3);
+  cv.width=Math.round(VW*s*dpr); cv.height=Math.round(VH*s*dpr);
+  ctx.setTransform(s*dpr,0,0,s*dpr,0,0);
+  SC=s*dpr; spriteCache.clear(); iconCache.length=0;
+}
+addEventListener('resize',fit); fit();
+
+let last=performance.now();
+function loop(now){
+  const dt=Math.min(.05,(now-last)/1000); last=now;
+  update(dt); draw();
+  requestAnimationFrame(loop);
+}
+startLevel(saved);
+startScreen();
+requestAnimationFrame(loop);
+
+// Offline support when served over http(s)
+if('serviceWorker' in navigator && location.protocol.startsWith('http')){
+  navigator.serviceWorker.register("../sw.js").catch(()=>{});
+}
+</script>
+</body>
+</html>

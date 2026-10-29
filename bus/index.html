@@ -1,0 +1,709 @@
+<!doctype html>
+<!--
+  Bus Super Party: a single-file color-matching parking puzzle.
+  Tap buses to drive them out of the lot to the bus stop; party guests of the
+  same color board automatically. Fill every bus without overflowing the stop.
+  Levels are procedurally generated (seeded) and always solvable.
+-->
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="theme-color" content="#2a1450">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Bus Party">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="manifest" href="../manifest.webmanifest">
+<link rel="icon" href="../icons/icon-192.png">
+<link rel="apple-touch-icon" href="../icons/apple-touch-icon.png">
+<title>Bus Super Party</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;800&display=swap" rel="stylesheet">
+<style>
+  :root{--bg1:#4a1f86;--bg2:#1a0b38;--ink:#fff;--accent:#ffd23f;--pink:#ff4d8d}
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+  html,body{height:100%;overflow:hidden;background:radial-gradient(circle at 50% 15%,var(--bg1),var(--bg2) 75%);
+    font-family:"Baloo 2",system-ui,sans-serif;color:var(--ink);touch-action:none;user-select:none;-webkit-user-select:none}
+  #stage{position:absolute;left:0;top:0;width:420px;height:800px;transform-origin:0 0}
+  canvas{position:absolute;left:0;top:0;width:420px;height:800px}
+  #hud{position:absolute;left:0;top:0;width:420px;height:54px;display:flex;align-items:center;gap:8px;padding:8px 12px 0}
+  #info{flex:1;line-height:1;text-shadow:0 2px 0 rgba(0,0,0,.35)}
+  #lvl{font:inherit;font-size:22px;font-weight:800;letter-spacing:.5px;color:inherit;background:none;border:0;padding:0;
+    line-height:1;text-shadow:inherit;cursor:pointer}
+  #pts{font-size:15px;font-weight:800;margin-top:3px;white-space:nowrap}
+  #pts b{color:var(--accent)}
+  .btn{border:0;border-radius:14px;font:inherit;font-weight:800;color:#2a1450;background:var(--accent);
+    box-shadow:0 4px 0 #b88a00;cursor:pointer;transition:transform .08s}
+  .btn:active{transform:translateY(3px);box-shadow:0 1px 0 #b88a00}
+  .btn:disabled{opacity:.4}
+  .hb{height:38px;min-width:42px;padding:0 10px;font-size:17px;display:inline-flex;align-items:center;justify-content:center;text-decoration:none}
+  .hb.alt{background:#fff;box-shadow:0 4px 0 #b9a9d6}
+  #overlay{position:absolute;inset:0;display:none;align-items:center;justify-content:center;
+    background:rgba(20,6,45,.62);backdrop-filter:blur(3px)}
+  #overlay.show{display:flex}
+  .card{width:340px;background:#fff;color:#2a1450;border-radius:26px;padding:26px 22px 22px;text-align:center;
+    box-shadow:0 10px 0 rgba(0,0,0,.25);animation:pop .35s cubic-bezier(.2,1.6,.4,1)}
+  @keyframes pop{from{transform:scale(.6);opacity:0}to{transform:scale(1);opacity:1}}
+  .card h1{font-size:40px;line-height:1;color:var(--pink);margin-bottom:6px}
+  .card h2{font-size:30px;line-height:1.1;margin-bottom:6px}
+  .card p{font-size:17px;line-height:1.3;margin:8px 0;font-weight:600}
+  .card .big{width:100%;height:58px;font-size:24px;margin-top:12px}
+  .card .sec{background:#efe7ff;box-shadow:0 4px 0 #c9b8ef}
+  .card .ded{color:var(--pink);font-size:18px}
+  .rows{margin:12px 0 4px;font-size:16px;font-weight:600}
+  .rows div{display:flex;justify-content:space-between;padding:2px 6px}
+  .rows .z{opacity:.4}
+  .total{font-size:34px;font-weight:800;color:var(--pink);line-height:1.1;margin-top:6px}
+  .rec{font-size:18px;font-weight:800}
+  .rec.new{color:#e0a800;animation:pop .5s .3s both cubic-bezier(.2,1.6,.4,1)}
+  .sum{font-size:15px;opacity:.7}
+  /* Auto-advance progress bar on the win card */
+  .bar{height:8px;border-radius:4px;background:#efe7ff;overflow:hidden;margin-top:14px}
+  .bar i{display:block;height:100%;width:0;background:var(--pink);animation:fill 1.7s linear forwards}
+  @keyframes fill{to{width:100%}}
+  /* Level picker list */
+  .lvls{position:relative;max-height:390px;overflow-y:auto;touch-action:pan-y;overscroll-behavior:contain;margin:10px -4px 0;padding:0 4px}
+  .lv{display:flex;justify-content:space-between;align-items:center;width:100%;height:50px;margin-bottom:8px;padding:0 14px;
+    border:3px solid transparent;border-radius:14px;background:#efe7ff;color:#2a1450;font:inherit;font-size:19px;font-weight:800;cursor:pointer}
+  .lv:active{transform:translateY(2px)}
+  .lv.cur{border-color:var(--pink);background:#fff}
+  .lv .sc{font-size:17px}
+  .lv .new{color:var(--pink)}
+  #toast{position:absolute;left:50%;top:190px;transform:translateX(-50%);background:#fff;color:#2a1450;
+    font-weight:800;font-size:18px;padding:6px 16px;border-radius:20px;opacity:0;transition:opacity .25s;pointer-events:none;white-space:nowrap}
+  #toast.show{opacity:1}
+</style>
+</head>
+<body>
+<div id="stage">
+  <canvas id="cv"></canvas>
+  <div id="hud">
+    <a class="btn hb alt" id="bBack" href="../" title="Voltar aos jogos">←</a>
+    <div id="info"><button id="lvl" title="Escolher nível">Nível 1 ▾</button><div id="pts"></div></div>
+    <button class="btn hb" id="bBoost" title="Abrir uma vaga extra no ponto">+1 vaga</button>
+    <button class="btn hb alt" id="bRestart" title="Recomeçar">↻</button>
+    <button class="btn hb alt" id="bMute" title="Som">🔊</button>
+  </div>
+  <div id="toast"></div>
+  <div id="overlay"><div class="card" id="card"></div></div>
+</div>
+<script>
+// Optional dedication shown on the start screen (leave empty to hide)
+const DEDICATION = 'Feito com ❤ por Rafael para Ranny';
+
+const VW = 420, VH = 800;
+const cv = document.getElementById('cv'), ctx = cv.getContext('2d');
+const stage = document.getElementById('stage');
+const $ = id => document.getElementById(id);
+
+// GEN-START
+// Seeded RNG so a level is identical on every retry
+function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
+const DIRS = [[1,0],[0,1],[-1,0],[0,-1]]; // right, down, left, up
+const NCOLORS = 8;
+const BASE_SLOTS = 4;
+
+function levelParams(L){
+  const W = Math.min(6, 4 + Math.floor((L-1)/3));
+  const H = Math.min(8, 5 + Math.floor((L-1)/2));
+  return {
+    W, H,
+    n: Math.min(Math.floor(W*H/2.6), 3 + L),
+    colors: Math.min(NCOLORS, 2 + Math.ceil(L/2)),
+    chunk: L<=2 ? 1 : L<=6 ? 2 : L<=13 ? 3 : 4, // how many buses' guests get mixed in the queue
+    bigRatio: Math.min(0.5, 0.1 + L*0.04),
+  };
+}
+
+function inside(p,x,y){return x>=0&&y>=0&&x<p.W&&y<p.H}
+
+function pathHits(b,set,p){
+  const [dx,dy]=DIRS[b.dir]; let x=b.hx+dx,y=b.hy+dy;
+  while(inside(p,x,y)){ if(set.has(x+','+y)) return true; x+=dx; y+=dy; }
+  return false;
+}
+
+function shuffle(a,rnd){for(let i=a.length-1;i>0;i--){const j=Math.floor(rnd()*(i+1));[a[i],a[j]]=[a[j],a[i]]}return a}
+
+// Each new bus must have a clear exit past the buses already placed,
+// so removing them in reverse placement order always works.
+function genLevel(L){
+  const p = levelParams(L), rnd = mulberry32(L*9973+17);
+  let best = null;
+  for(let attempt=0; attempt<12; attempt++){
+    const grid = Array.from({length:p.H},()=>Array(p.W).fill(-1));
+    const buses = [];
+    let fails = 0;
+    while(buses.length<p.n && fails<60){
+      let pick=null, pickScore=-1;
+      for(let c=0;c<30;c++){
+        const len = rnd()<p.bigRatio ? 3 : 2;
+        const dir = Math.floor(rnd()*4), [dx,dy] = DIRS[dir];
+        const hx = Math.floor(rnd()*p.W), hy = Math.floor(rnd()*p.H);
+        const cells=[]; let ok=true;
+        for(let k=0;k<len;k++){
+          const x=hx-dx*k, y=hy-dy*k;
+          if(!inside(p,x,y)||grid[y][x]!==-1){ok=false;break}
+          cells.push([x,y]);
+        }
+        if(!ok) continue;
+        let x=hx+dx, y=hy+dy;
+        while(inside(p,x,y)){ if(grid[y][x]!==-1){ok=false;break} x+=dx; y+=dy; }
+        if(!ok) continue;
+        // Prefer spots that block earlier buses (creates dependencies)
+        const set = new Set(cells.map(([a,b])=>a+','+b));
+        let score = rnd()*0.9;
+        for(const b of buses) if(pathHits(b,set,p)) score += 1;
+        if(score>pickScore){pickScore=score; pick={len,dir,hx,hy,cells}}
+      }
+      if(!pick){fails++; continue}
+      pick.cells.forEach(([x,y])=>grid[y][x]=buses.length);
+      buses.push(pick);
+    }
+    if(!best || buses.length>best.length) best = buses;
+    if(buses.length>=p.n) break;
+  }
+  // Colors follow the intended removal order (reverse placement)
+  const order = best.slice().reverse();
+  let prev = -1;
+  for(const b of order){
+    let c; do{ c=Math.floor(rnd()*p.colors) }while(c===prev && p.colors>1);
+    b.color=c; b.cap = b.len===3 ? 6 : 4; prev=c;
+  }
+  const queue=[];
+  for(let i=0;i<order.length;i+=p.chunk){
+    const part=[];
+    order.slice(i,i+p.chunk).forEach(b=>{for(let k=0;k<b.cap;k++) part.push(b.color)});
+    queue.push(...shuffle(part,rnd));
+  }
+  return {p, buses:best.map(({len,dir,hx,hy,color,cap})=>({len,dir,hx,hy,color,cap})), queue};
+}
+// GEN-END
+
+// Color-blind friendly palette (checked under deutan/protan simulation);
+// each color also has its own shape so hue is never the only cue.
+const COLORS = [
+  {c:'#1f5fff',d:'#0b3aa8',s:'circle'},   // blue
+  {c:'#ffd400',d:'#b38f00',s:'square'},   // yellow
+  {c:'#e8274b',d:'#9e0f2c',s:'triangle'}, // red
+  {c:'#f2f2f2',d:'#9a93ad',s:'diamond'},  // white
+  {c:'#ff7300',d:'#b34f00',s:'star'},     // orange
+  {c:'#56d2ff',d:'#1f8fbf',s:'heart'},    // sky blue
+  {c:'#8c8ca6',d:'#55556e',s:'hexagon'},  // gray
+  {c:'#6a1b9a',d:'#d7b3f0',s:'cross'},    // dark purple (light outline to stand out on the lot)
+];
+
+// ---------- Layout ----------
+const LOT = {x:10, y:300, w:400, h:490};
+const DOCK_Y = 122;
+let cell=60, ox=0, oy=0;
+function slotX(i){return VW/2 + (i-(S.slots-1)/2)*80}
+function dockLen(b){return b.len===3?104:80}
+function qPos(i){
+  if(i<12) return [34+i*32, 232];
+  if(i<24) return [34+(23-i)*32, 272];
+  return [-30, 272];
+}
+
+// ---------- Audio ----------
+let AC=null, muted=false;
+try{ muted = localStorage.getItem('bsp_muted')==='1' }catch(e){}
+function tone(f,dur,type='sine',vol=.12,slide=0,delay=0){
+  if(muted) return;
+  try{
+    if(!AC) AC = new (window.AudioContext||window.webkitAudioContext)();
+    const t = AC.currentTime+delay, o=AC.createOscillator(), g=AC.createGain();
+    o.type=type; o.frequency.setValueAtTime(f,t);
+    if(slide) o.frequency.exponentialRampToValueAtTime(f*slide,t+dur);
+    g.gain.setValueAtTime(vol,t); g.gain.exponentialRampToValueAtTime(.0001,t+dur);
+    o.connect(g).connect(AC.destination); o.start(t); o.stop(t+dur+.02);
+  }catch(e){}
+}
+const sfx = {
+  go(){tone(420,.14,'triangle',.12,1.8)},
+  bump(){tone(150,.16,'square',.07,.6); buzz(25)},
+  no(){tone(220,.22,'sawtooth',.05,.7); buzz([20,40,20])},
+  board(n){tone(520+n*70,.07,'sine',.09)},
+  depart(){[523,659,784].forEach((f,i)=>tone(f,.16,'triangle',.1,0,i*.07))},
+  win(){[523,659,784,1047,784,1047].forEach((f,i)=>tone(f,.2,'triangle',.11,0,i*.1))},
+  lose(){[392,330,262].forEach((f,i)=>tone(f,.25,'triangle',.1,0,i*.14))},
+};
+function buzz(p){try{navigator.vibrate&&navigator.vibrate(p)}catch(e){}}
+
+// ---------- State ----------
+let S = null;
+let saved = 1;
+try{ saved = Math.max(1, parseInt(localStorage.getItem('bsp_level'))||1) }catch(e){}
+// Best score per level: {level: points}
+let best = {};
+try{ best = JSON.parse(localStorage.getItem('bsp_best'))||{} }catch(e){}
+const fmt = n=>Math.round(n).toLocaleString('pt-BR');
+const totalBest = ()=>Object.values(best).reduce((a,b)=>a+b,0);
+function renderPts(){
+  $('pts').innerHTML = `⭐ <b>${fmt(S.shown)}</b> &nbsp;🏆 ${fmt(best[S.level]||0)}`;
+}
+
+// Scoring
+const PTS = {guest:10, bus:30, comboWindow:3.5, maxCombo:5, clean:100, noBoost:100, timeStep:5};
+
+let winT = 0; // pending auto-advance after a win
+function startLevel(L){
+  clearTimeout(winT);
+  const g = genLevel(L);
+  cell = Math.min((LOT.w-16)/g.p.W, (LOT.h-16)/g.p.H, 70);
+  ox = LOT.x + (LOT.w-cell*g.p.W)/2;
+  oy = LOT.y + (LOT.h-cell*g.p.H)/2;
+  const grid = Array.from({length:g.p.H},()=>Array(g.p.W).fill(-1));
+  const buses = g.buses.map((b,id)=>{
+    const [dx,dy]=DIRS[b.dir];
+    for(let k=0;k<b.len;k++) grid[b.hy-dy*k][b.hx-dx*k]=id;
+    return {...b, id, state:'lot', off:0, t:0, shake:0, filled:0, incoming:0, slot:-1, dx:0};
+  });
+  S = {
+    level:L, p:g.p, grid, buses,
+    queue: g.queue.map((c,i)=>{const [x,y]=qPos(i); return {color:c,x,y,ph:Math.random()*6}}),
+    flying:[], parts:[], slots:BASE_SLOTS, slotOcc:Array(BASE_SLOTS).fill(-1),
+    boost:false, over:false, endT:0, boardT:0, taps:0, time:0,
+    score:0, shown:0, pts:{guests:0,buses:0,combo:0}, combo:0, lastDepart:-99, bumps:0, playT:0, floats:[],
+  };
+  $('lvl').textContent = 'Nível '+L+' ▾';
+  renderPts();
+  $('bBoost').disabled = false;
+}
+
+function freeSlot(){return S.slotOcc.indexOf(-1)}
+
+function isFree(b){
+  const [dx,dy]=DIRS[b.dir]; let x=b.hx+dx,y=b.hy+dy;
+  while(inside(S.p,x,y)){ if(S.grid[y][x]!==-1) return false; x+=dx; y+=dy; }
+  return true;
+}
+
+function tapBus(b){
+  S.taps++;
+  const [dx,dy]=DIRS[b.dir];
+  let x=b.hx+dx, y=b.hy+dy, f=0, blocker=-1;
+  while(inside(S.p,x,y)){ if(S.grid[y][x]!==-1){blocker=S.grid[y][x];break} f++; x+=dx; y+=dy; }
+  if(blocker>=0){
+    S.bumps++;
+    b.state='bump'; b.t=0; b.bumpD=f+.2; b.blocker=blocker; b.hit=false;
+    return;
+  }
+  const slot = freeSlot();
+  if(slot<0){ toast('O ponto está lotado!'); b.shake=.35; sfx.no(); return }
+  S.slotOcc[slot]=b.id; b.slot=slot;
+  for(let k=0;k<b.len;k++) S.grid[b.hy-dy*k][b.hx-dx*k]=-1;
+  b.state='exit'; b.kAhead=f; b.v=7; sfx.go();
+}
+
+function useBoost(){
+  if(S.boost||S.over&&S.overKind!=='lose') return;
+  S.boost=true; S.slots++; S.slotOcc.push(-1);
+  $('bBoost').disabled=true;
+  if(S.over){ S.over=false; hideOverlay(); }
+  toast('Vaga extra aberta!');
+}
+
+// ---------- Poses ----------
+const ease = t=>t<.5?2*t*t:1-Math.pow(-2*t+2,2)/2;
+const easeIn = t=>t*t*t;
+function lotPose(b){
+  const [dx,dy]=DIRS[b.dir];
+  const tx=b.hx-dx*(b.len-1), ty=b.hy-dy*(b.len-1);
+  let x=ox+((b.hx+tx)/2+.5+dx*b.off)*cell, y=oy+((b.hy+ty)/2+.5+dy*b.off)*cell;
+  if(b.shake>0){ const s=Math.sin(S.time*70)*4*(b.shake/.35); x+=-dy*s; y+=dx*s; }
+  return {x,y,a:Math.atan2(dy,dx),l:b.len*cell-8,w:cell-12};
+}
+function dockPose(b){return {x:slotX(b.slot),y:DOCK_Y,a:-Math.PI/2,l:dockLen(b),w:46}}
+function busPose(b){
+  switch(b.state){
+    case 'lot': case 'bump': case 'exit': return lotPose(b);
+    case 'fly': {
+      const e=ease(Math.min(1,b.t)), a=b.fs, z=dockPose(b);
+      const da=((z.a-a.a+Math.PI*3)%(Math.PI*2))-Math.PI;
+      return {x:a.x+(z.x-a.x)*e, y:a.y+(z.y-a.y)*e, a:a.a+da*e, l:a.l+(z.l-a.l)*e, w:a.w+(z.w-a.w)*e};
+    }
+    case 'docked': {
+      let x=b.dx; if(b.shake>0) x+=Math.sin(S.time*70)*3*(b.shake/.35);
+      return {x,y:DOCK_Y,a:-Math.PI/2,l:dockLen(b),w:46};
+    }
+    case 'leave': return {x:b.dx,y:DOCK_Y-easeIn(Math.min(1,b.t))*320,a:-Math.PI/2,l:dockLen(b),w:46};
+  }
+}
+
+// ---------- Update ----------
+function findBus(color){
+  let best=null;
+  for(const b of S.buses){
+    if(b.state!=='docked'||b.color!==color) continue;
+    const n=b.filled+b.incoming;
+    if(n<b.cap && (!best || n>best.filled+best.incoming)) best=b;
+  }
+  return best;
+}
+
+function confetti(x,y,n,color){
+  for(let i=0;i<n;i++){
+    const a=Math.random()*Math.PI*2, s=120+Math.random()*260;
+    S.parts.push({x,y,vx:Math.cos(a)*s,vy:Math.sin(a)*s-160,r:Math.random()*6,vr:(Math.random()-.5)*12,
+      c:color||COLORS[Math.floor(Math.random()*NCOLORS)].c,life:1+Math.random()*.6});
+  }
+}
+
+function update(dt){
+  S.time+=dt;
+  for(const b of S.buses){
+    if(b.shake>0) b.shake=Math.max(0,b.shake-dt);
+    if(b.state==='bump'){
+      b.t+=dt;
+      const tf=Math.max(.05,b.bumpD/16);
+      if(b.t<tf) b.off=b.bumpD*(b.t/tf);
+      else{
+        if(!b.hit){ b.hit=true; S.buses[b.blocker].shake=.3; sfx.bump(); }
+        const k=(b.t-tf)/.22;
+        b.off=b.bumpD*(1-ease(Math.min(1,k)));
+        if(k>=1){ b.off=0; b.state='lot'; }
+      }
+    }else if(b.state==='exit'){
+      b.v=Math.min(24,b.v+50*dt); b.off+=b.v*dt;
+      if(b.off>=b.kAhead+.5){ b.fs=lotPose(b); b.state='fly'; b.t=0; }
+    }else if(b.state==='fly'){
+      b.t+=dt/.45;
+      if(b.t>=1){ b.state='docked'; b.dx=slotX(b.slot); }
+    }else if(b.state==='docked'){
+      b.dx+=(slotX(b.slot)-b.dx)*(1-Math.exp(-12*dt));
+    }else if(b.state==='leave'){
+      b.t+=dt/.6;
+      if(b.t>=1) b.state='gone';
+    }
+  }
+
+  // Queue walks toward the front
+  const k=1-Math.exp(-14*dt);
+  S.queue.forEach((g,i)=>{const [tx,ty]=qPos(i); g.x+=(tx-g.x)*k; g.y+=(ty-g.y)*k;});
+
+  // Boarding
+  S.boardT-=dt;
+  if(S.boardT<=0 && S.queue.length){
+    const g=S.queue[0], b=findBus(g.color);
+    if(b){
+      S.queue.shift(); b.incoming++;
+      S.flying.push({color:g.color,x0:g.x,y0:g.y,bus:b,t:0});
+      S.boardT=.09;
+    }
+  }
+  for(let i=S.flying.length-1;i>=0;i--){
+    const f=S.flying[i]; f.t+=dt/.24;
+    if(f.t>=1){
+      S.flying.splice(i,1);
+      const b=f.bus; b.incoming--; b.filled++; sfx.board(b.filled);
+      S.score+=PTS.guest; S.pts.guests+=PTS.guest;
+      if(b.filled===b.cap){
+        b.state='leave'; b.t=0; S.slotOcc[b.slot]=-1;
+        // Quick consecutive departures build a combo multiplier
+        S.combo = S.time-S.lastDepart<=PTS.comboWindow ? Math.min(PTS.maxCombo,S.combo+1) : 1;
+        S.lastDepart=S.time;
+        const gain=PTS.bus*S.combo;
+        S.score+=gain; S.pts.buses+=PTS.bus; S.pts.combo+=gain-PTS.bus;
+        S.floats.push({x:b.dx,y:DOCK_Y+40,text:'+'+gain+(S.combo>1?'  Combo x'+S.combo+'!':''),life:1.2,combo:S.combo>1});
+        confetti(b.dx,DOCK_Y,26,COLORS[b.color].c); sfx.depart(); buzz(15);
+      }
+    }
+  }
+
+  // Confetti
+  for(let i=S.parts.length-1;i>=0;i--){
+    const p=S.parts[i]; p.vy+=520*dt; p.vx*=.99; p.x+=p.vx*dt; p.y+=p.vy*dt; p.r+=p.vr*dt; p.life-=dt;
+    if(p.life<=0) S.parts.splice(i,1);
+  }
+  for(let i=S.floats.length-1;i>=0;i--){
+    const f=S.floats[i]; f.y-=40*dt; f.life-=dt;
+    if(f.life<=0) S.floats.splice(i,1);
+  }
+  // HUD score counts up smoothly
+  if(S.shown<S.score){ S.shown=Math.min(S.score,S.shown+Math.max(1,Math.ceil((S.score-S.shown)*.15))); renderPts(); }
+
+  if(S.over) return;
+  S.playT+=dt;
+  // Win / lose detection
+  const busy = S.flying.length || S.buses.some(b=>b.state==='exit'||b.state==='fly'||b.state==='bump');
+  const won = !S.queue.length && !S.flying.length;
+  const stuck = !busy && S.queue.length && freeSlot()<0 && !findBus(S.queue[0].color);
+  if(won||stuck){ S.endT+=dt; if(S.endT>(won?.9:.6)) won?onWin():onLose(); }
+  else S.endT=0;
+}
+
+// ---------- Drawing ----------
+function rr(x,y,w,h,r){ctx.beginPath();ctx.moveTo(x+r,y);ctx.arcTo(x+w,y,x+w,y+h,r);ctx.arcTo(x+w,y+h,x,y+h,r);ctx.arcTo(x,y+h,x,y,r);ctx.arcTo(x,y,x+w,y,r);ctx.closePath()}
+function circle(x,y,r){ctx.beginPath();ctx.arc(x,y,r,0,Math.PI*2)}
+function poly(x,y,pts){ctx.beginPath();pts.forEach(([a,b],i)=>i?ctx.lineTo(x+a,y+b):ctx.moveTo(x+a,y+b));ctx.closePath()}
+
+// Builds the path of a color's shape centered at (x,y)
+function shapePath(ci,x,y,r){
+  switch(COLORS[ci].s){
+    case 'circle': circle(x,y,r); break;
+    case 'square': rr(x-r*.92,y-r*.92,r*1.84,r*1.84,r*.35); break;
+    case 'triangle': poly(x,y,[[0,-r*1.15],[r*1.1,r*.85],[-r*1.1,r*.85]]); break;
+    case 'diamond': poly(x,y,[[0,-r*1.2],[r*1.05,0],[0,r*1.2],[-r*1.05,0]]); break;
+    case 'star': poly(x,y,Array.from({length:10},(_,i)=>{const a=-Math.PI/2+i*Math.PI/5, k=i%2?r*.62:r*1.2; return [Math.cos(a)*k,Math.sin(a)*k]})); break;
+    case 'hexagon': poly(x,y,Array.from({length:6},(_,i)=>{const a=i*Math.PI/3; return [Math.cos(a)*r*1.05,Math.sin(a)*r*1.05]})); break;
+    case 'cross': { const a=r*1.05, b=r*.42; poly(x,y,[[-b,-a],[b,-a],[b,-b],[a,-b],[a,b],[b,b],[b,a],[-b,a],[-b,b],[-a,b],[-a,-b],[-b,-b]]); break; }
+    case 'heart':
+      ctx.beginPath(); ctx.moveTo(x,y+r*1.05);
+      ctx.bezierCurveTo(x-r*1.6,y+r*.05,x-r*1.05,y-r*1.35,x,y-r*.5);
+      ctx.bezierCurveTo(x+r*1.05,y-r*1.35,x+r*1.6,y+r*.05,x,y+r*1.05);
+      ctx.closePath(); break;
+  }
+}
+// Face and hat offsets per shape (in radii)
+const FACE_DY = {triangle:.3, heart:-.1};
+const HAT_Y = {triangle:-.95, diamond:-.95, star:-.9, heart:-.75};
+
+function drawGuest(x,y,r,ci){
+  const col=COLORS[ci], fy=y+r*(FACE_DY[col.s]||0);
+  ctx.fillStyle='rgba(0,0,0,.22)'; ctx.beginPath(); ctx.ellipse(x,y+r*1.05,r*.8,r*.25,0,0,Math.PI*2); ctx.fill();
+  shapePath(ci,x,y,r); ctx.fillStyle=col.c; ctx.fill();
+  ctx.lineJoin='round'; ctx.lineWidth=2.2; ctx.strokeStyle='#2a1450'; ctx.stroke();
+  ctx.fillStyle='#2a1a3a';
+  circle(x-r*.3,fy-r*.08,r*.13); ctx.fill(); circle(x+r*.3,fy-r*.08,r*.13); ctx.fill();
+  ctx.beginPath(); ctx.arc(x,fy+r*.08,r*.3,.15*Math.PI,.85*Math.PI); ctx.strokeStyle='#2a1a3a'; ctx.lineWidth=1.6; ctx.stroke();
+  // Party hat
+  const hy=y+r*(HAT_Y[col.s]||-.72);
+  ctx.beginPath(); ctx.moveTo(x-r*.42,hy); ctx.lineTo(x+r*.42,hy-r*.05); ctx.lineTo(x+r*.15,hy-r*.85); ctx.closePath();
+  ctx.fillStyle = ci===1 ? '#ff4d8d' : '#ffd23f'; ctx.fill();
+  circle(x+r*.15,hy-r*.85,r*.18); ctx.fillStyle='#fff'; ctx.fill();
+}
+
+function drawBus(b,p,inLot){
+  const col=COLORS[b.color], L=p.l, Wd=p.w;
+  ctx.save(); ctx.translate(p.x,p.y); ctx.rotate(p.a);
+  ctx.fillStyle='rgba(0,0,0,.28)'; rr(-L/2+3,-Wd/2+5,L,Wd,11); ctx.fill();
+  rr(-L/2,-Wd/2,L,Wd,11); ctx.fillStyle=col.c; ctx.fill(); ctx.lineWidth=2.5; ctx.strokeStyle=col.d; ctx.stroke();
+  // Side windows strip
+  ctx.fillStyle='rgba(255,255,255,.22)'; rr(-L/2+5,-Wd/2+5,L-20,Wd-10,7); ctx.fill();
+  // Windshield + headlights mark the front
+  ctx.fillStyle='#c9f0ff'; rr(L/2-13,-Wd/2+5,8,Wd-10,3); ctx.fill();
+  ctx.fillStyle='#fff6a8'; circle(L/2-2,-Wd*.32,2.6); ctx.fill(); circle(L/2-2,Wd*.32,2.6); ctx.fill();
+  if(inLot){
+    // Direction chevron (front half)
+    ctx.strokeStyle='rgba(42,20,80,.85)'; ctx.lineWidth=7; ctx.lineCap='round'; ctx.lineJoin='round';
+    const cx=L*.17; ctx.beginPath(); ctx.moveTo(cx-6,-9); ctx.lineTo(cx+5,0); ctx.lineTo(cx-6,9); ctx.stroke();
+    ctx.strokeStyle='#fff'; ctx.lineWidth=3.5; ctx.stroke();
+  }
+  ctx.restore();
+  // Symbols are drawn upright in world space so shapes never look rotated
+  const cs=Math.cos(p.a), sn=Math.sin(p.a), at=(lx,ly)=>[p.x+lx*cs-ly*sn, p.y+lx*sn+ly*cs];
+  ctx.lineJoin='round';
+  if(inLot){
+    const [sx,sy]=at(-L*.2,0);
+    shapePath(b.color,sx,sy,Math.min(10.5,Wd*.23)); ctx.fillStyle='#fff'; ctx.fill();
+    ctx.lineWidth=2.5; ctx.strokeStyle='#2a1450'; ctx.stroke();
+  }else{
+    // Seats use the color's shape; filled seats are solid
+    const cols=b.cap/2, x0=-L/2+13, span=L-36;
+    for(let i=0;i<cols;i++) for(let r=0;r<2;r++){
+      const idx=i*2+r, [sx,sy]=at(x0+(cols>1?i*span/(cols-1):0),(r?1:-1)*Wd*.22);
+      shapePath(b.color,sx,sy,6);
+      if(idx<b.filled){ ctx.fillStyle=col.c; ctx.fill(); ctx.lineWidth=2; ctx.strokeStyle='#2a1450'; ctx.stroke(); }
+      else { ctx.fillStyle='rgba(42,20,80,.35)'; ctx.fill(); }
+    }
+  }
+}
+
+function draw(){
+  ctx.clearRect(0,0,VW,VH);
+
+  // Bus stop pads
+  for(let i=0;i<S.slots;i++){
+    const x=slotX(i);
+    rr(x-31,64,62,116,14); ctx.fillStyle='rgba(255,255,255,.08)'; ctx.fill();
+    ctx.setLineDash([6,6]); ctx.lineWidth=2; ctx.strokeStyle='rgba(255,255,255,.35)'; ctx.stroke(); ctx.setLineDash([]);
+  }
+
+  // Sidewalk ribbon behind the queue
+  ctx.lineCap='round'; ctx.lineJoin='round';
+  ctx.beginPath(); ctx.moveTo(34,232); ctx.lineTo(386,232); ctx.arc(386,252,20,-Math.PI/2,Math.PI/2); ctx.lineTo(-10,272);
+  ctx.strokeStyle='rgba(255,255,255,.12)'; ctx.lineWidth=36; ctx.stroke();
+
+  // Parking lot
+  rr(LOT.x,LOT.y,LOT.w,LOT.h,22); ctx.fillStyle='#2b2d48'; ctx.fill(); ctx.lineWidth=3; ctx.strokeStyle='#4a4c72'; ctx.stroke();
+  ctx.strokeStyle='rgba(255,255,255,.06)'; ctx.lineWidth=1.5;
+  for(let x=0;x<=S.p.W;x++){ctx.beginPath();ctx.moveTo(ox+x*cell,oy);ctx.lineTo(ox+x*cell,oy+S.p.H*cell);ctx.stroke()}
+  for(let y=0;y<=S.p.H;y++){ctx.beginPath();ctx.moveTo(ox,oy+y*cell);ctx.lineTo(ox+S.p.W*cell,oy+y*cell);ctx.stroke()}
+
+  // Lot buses (exiting ones on top)
+  for(const b of S.buses) if(b.state==='lot'||b.state==='bump') drawBus(b,busPose(b),true);
+  for(const b of S.buses) if(b.state==='exit') drawBus(b,busPose(b),true);
+
+  // Tutorial pulse on the first level
+  if(S.level===1 && S.taps===0){
+    const b=S.buses.slice().reverse().find(b=>b.state==='lot'&&isFree(b));
+    if(b){ const p=lotPose(b), s=1+Math.sin(S.time*5)*.12;
+      circle(p.x,p.y,cell*.55*s); ctx.lineWidth=4; ctx.strokeStyle='rgba(255,210,63,.9)'; ctx.stroke(); }
+  }
+
+  for(const b of S.buses) if(b.state==='docked') drawBus(b,busPose(b),false);
+
+  // Queue (back to front so the front guest is on top)
+  ctx.fillStyle='rgba(255,255,255,.85)'; ctx.font='800 15px "Baloo 2",sans-serif'; ctx.textAlign='left';
+  ctx.fillText('Convidados: '+(S.queue.length+S.flying.length),16,204);
+  for(let i=Math.min(S.queue.length,25)-1;i>=0;i--){
+    const g=S.queue[i], bob=Math.abs(Math.sin(S.time*4+g.ph))*(i===0?4:1.5);
+    drawGuest(g.x,g.y-bob,13,g.color);
+  }
+  for(const f of S.flying){
+    const p=busPose(f.bus), t=f.t;
+    drawGuest(f.x0+(p.x-f.x0)*t, f.y0+(p.y-f.y0)*t-Math.sin(t*Math.PI)*40, 13-t*5, f.color);
+  }
+
+  for(const b of S.buses) if(b.state==='fly'||b.state==='leave') drawBus(b,busPose(b),b.state==='fly'&&b.t<.5);
+
+  for(const p of S.parts){
+    ctx.save(); ctx.translate(p.x,p.y); ctx.rotate(p.r); ctx.globalAlpha=Math.min(1,p.life*2);
+    ctx.fillStyle=p.c; ctx.fillRect(-4,-2.5,8,5); ctx.restore();
+  }
+  ctx.globalAlpha=1;
+
+  // Floating score popups
+  ctx.textAlign='center'; ctx.lineJoin='round';
+  for(const f of S.floats){
+    ctx.globalAlpha=Math.min(1,f.life*2.5);
+    ctx.font=`800 ${f.combo?22:19}px "Baloo 2",sans-serif`;
+    const x=Math.max(90,Math.min(VW-90,f.x));
+    ctx.lineWidth=5; ctx.strokeStyle='#2a1450'; ctx.strokeText(f.text,x,f.y);
+    ctx.fillStyle=f.combo?'#ffd23f':'#fff'; ctx.fillText(f.text,x,f.y);
+  }
+  ctx.globalAlpha=1;
+}
+
+// ---------- Screens ----------
+function showOverlay(html){$('card').innerHTML=html; $('overlay').classList.add('show')}
+function hideOverlay(){$('overlay').classList.remove('show')}
+let toastT=0;
+function toast(msg){const t=$('toast'); t.textContent=msg; t.classList.add('show'); clearTimeout(toastT); toastT=setTimeout(()=>t.classList.remove('show'),1300)}
+
+function startScreen(){
+  showOverlay(`
+    <h1>Bus Super<br>Party</h1>
+    ${DEDICATION?`<p class="ded">${DEDICATION}</p>`:''}
+    <p>Toque nos ônibus para tirá-los do estacionamento.</p>
+    <p>Os convidados embarcam no ônibus da mesma cor e do mesmo símbolo (● ■ ▲ ◆ ★ ♥).</p>
+    <p>Cuidado para não lotar o ponto!</p>
+    ${totalBest()?`<p class="rec">🏆 Total de recordes: ${fmt(totalBest())}</p>`:''}
+    <button class="btn big" id="oPlay">Jogar · Nível ${saved}</button>
+    ${saved>1?'<button class="btn big sec" id="oPick">Escolher nível</button>':''}`);
+  S.over=true; S.overKind='start';
+  $('oPlay').onclick=()=>{hideOverlay(); startLevel(saved)};
+  if(saved>1) $('oPick').onclick=levelPicker;
+}
+
+// Lists every unlocked level (newest first) with its best score
+function levelPicker(){
+  if(!S) return;
+  const from=S.over?S.overKind:'play';
+  if(from==='win') clearTimeout(winT);
+  S.over=true; S.overKind='menu';
+  let rows='';
+  for(let L=saved;L>=1;L--){
+    const sc=best[L]?`🏆 ${fmt(best[L])}`:L<saved?'✓ concluído':'<span class="new">▶ novo</span>';
+    rows+=`<button class="lv${L===S.level?' cur':''}" data-l="${L}"><span>${L===S.level?'● ':''}Nível ${L}</span><span class="sc">${sc}</span></button>`;
+  }
+  showOverlay(`<h2>Escolher nível</h2>
+    ${totalBest()?`<div class="sum">Total de recordes: ${fmt(totalBest())}</div>`:''}
+    <div class="lvls" id="oList">${rows}</div>
+    <button class="btn big sec" id="oClose">Voltar</button>`);
+  const list=$('oList'), cur=list.querySelector('.cur');
+  if(cur) list.scrollTop=cur.offsetTop-list.clientHeight/2+25;
+  list.onclick=e=>{const b=e.target.closest('.lv'); if(b){hideOverlay(); startLevel(+b.dataset.l)}};
+  // Return to wherever the picker was opened from
+  $('oClose').onclick=()=>{
+    if(from==='start') startScreen();
+    else if(from==='win') {hideOverlay(); startLevel(S.level+1)}
+    else if(from==='lose') loseScreen();
+    else {hideOverlay(); S.over=false}
+  };
+}
+
+function onWin(){
+  S.over=true; S.overKind='win';
+  // Replaying an old level never locks newer ones
+  saved=Math.max(saved,S.level+1); try{localStorage.setItem('bsp_level',saved)}catch(e){}
+  confetti(VW/2,300,120); sfx.win(); buzz([30,60,30]);
+  // End-of-level bonuses
+  const guests=S.pts.guests/PTS.guest, par=guests+10;
+  const speed=Math.max(0,Math.round(par-S.playT))*PTS.timeStep;
+  const clean=S.bumps===0?PTS.clean:0, noBoost=S.boost?0:PTS.noBoost;
+  S.score+=speed+clean+noBoost;
+  const prev=best[S.level]||0, isRecord=S.score>prev;
+  if(isRecord){ best[S.level]=S.score; try{localStorage.setItem('bsp_best',JSON.stringify(best))}catch(e){} }
+  // Short congratulations card, then jump straight to the next level
+  const L=S.level;
+  winT=setTimeout(()=>{
+    const msgs=['Festa garantida!','Arrasou, Ranny!','Que festa!','Todo mundo a bordo!','Mandou bem, Ranny!','Perfeito!'];
+    showOverlay(`<h2>${msgs[L%msgs.length]} 🎉</h2><p>Nível ${L} concluído</p>
+      <div class="total">${fmt(S.score)} pontos</div>
+      ${isRecord?`<div class="rec new">🏆 Novo recorde!${prev?` (antes: ${fmt(prev)})`:''}</div>`
+                :`<div class="rec">🏆 Recorde: ${fmt(prev)}</div>`}
+      <p>Indo para o nível ${L+1}…</p>
+      <div class="bar"><i></i></div>`);
+    winT=setTimeout(()=>{hideOverlay(); startLevel(L+1)},1700);
+  },300);
+}
+
+function onLose(){
+  S.over=true; S.overKind='lose'; sfx.lose();
+  loseScreen();
+}
+function loseScreen(){
+  S.over=true; S.overKind='lose';
+  showOverlay(`<h2>Ponto lotado! 😵</h2><p>Nenhum convidado consegue embarcar.</p>
+    ${S.boost?'':'<button class="btn big" id="oBoost">+1 vaga e continuar</button>'}
+    <button class="btn big sec" id="oRetry">Tentar de novo</button>`);
+  if(!S.boost) $('oBoost').onclick=useBoost;
+  $('oRetry').onclick=()=>{hideOverlay(); startLevel(S.level)};
+}
+
+// ---------- Input & loop ----------
+cv.addEventListener('pointerdown',e=>{
+  if(!S||S.over) return;
+  const r=cv.getBoundingClientRect();
+  const px=(e.clientX-r.left)/r.width*VW, py=(e.clientY-r.top)/r.height*VH;
+  const gx=Math.floor((px-ox)/cell), gy=Math.floor((py-oy)/cell);
+  if(!inside(S.p,gx,gy)) return;
+  const id=S.grid[gy][gx];
+  if(id>=0 && S.buses[id].state==='lot') tapBus(S.buses[id]);
+});
+$('bRestart').onclick=()=>{ if(S){hideOverlay(); startLevel(S.level)} };
+$('bBoost').onclick=useBoost;
+$('lvl').onclick=levelPicker;
+function syncMute(){$('bMute').textContent=muted?'🔇':'🔊'}
+$('bMute').onclick=()=>{muted=!muted; syncMute(); try{localStorage.setItem('bsp_muted',muted?'1':'0')}catch(e){}};
+syncMute();
+
+function fit(){
+  const vw=innerWidth, vh=innerHeight, s=Math.min(vw/VW,vh/VH);
+  stage.style.transform=`translate(${(vw-VW*s)/2}px,${(vh-VH*s)/2}px) scale(${s})`;
+  const dpr=Math.min(window.devicePixelRatio||1,3);
+  cv.width=Math.round(VW*s*dpr); cv.height=Math.round(VH*s*dpr);
+  ctx.setTransform(s*dpr,0,0,s*dpr,0,0);
+}
+addEventListener('resize',fit); fit();
+
+let last=performance.now();
+function loop(now){
+  const dt=Math.min(.05,(now-last)/1000); last=now;
+  update(dt); draw();
+  requestAnimationFrame(loop);
+}
+startLevel(saved);
+startScreen();
+requestAnimationFrame(loop);
+
+// Offline support when served over http(s)
+if('serviceWorker' in navigator && location.protocol.startsWith('http')){
+  navigator.serviceWorker.register("../sw.js").catch(()=>{});
+}
+</script>
+</body>
+</html>
